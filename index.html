@@ -5,10 +5,206 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cronograma de Producción</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCFU_hvuGjZDUDHSkaKLOjWR5SoPY2HBTI",
+  authDomain: "cronogramas-de-produccion.firebaseapp.com",
+  projectId: "cronogramas-de-produccion",
+  storageBucket: "cronogramas-de-produccion.firebasestorage.app",
+  messagingSenderId: "49269166836",
+  appId: "1:49269166836:web:bfdf32ec1887ffed8fc4a1"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const provider = new GoogleAuthProvider();
+
+let currentUser = null;
+let currentProjectId = null;
+let saveTimeout = null;
+let unsubscribeProject = null;
+
+// ── AUTH ───────────────────────────────────────────────────────────────────
+window.loginGoogle = async () => {
+  try { await signInWithPopup(auth, provider); }
+  catch(e) { alert('Error al iniciar sesión: ' + e.message); }
+};
+window.logOut = async () => {
+  if(unsubscribeProject) unsubscribeProject();
+  await signOut(auth);
+};
+
+onAuthStateChanged(auth, user => {
+  currentUser = user;
+  if(user) {
+    document.getElementById('screen-login').style.display = 'none';
+    document.getElementById('screen-projects').style.display = 'block';
+    document.getElementById('screen-app').style.display = 'none';
+    document.getElementById('user-name').textContent = user.displayName;
+    document.getElementById('user-photo').src = user.photoURL;
+    loadProjects();
+  } else {
+    document.getElementById('screen-login').style.display = 'flex';
+    document.getElementById('screen-projects').style.display = 'none';
+    document.getElementById('screen-app').style.display = 'none';
+    currentProjectId = null;
+  }
+});
+
+// ── PROJECTS ───────────────────────────────────────────────────────────────
+async function loadProjects() {
+  const el = document.getElementById('projects-list');
+  el.innerHTML = '<div style="color:#aaa;font-size:13px;padding:1rem 0">Cargando...</div>';
+  const q = query(collection(db, 'proyectos'), where('owner', '==', currentUser.uid));
+  const snap = await getDocs(q);
+  renderProjectsList(snap);
+}
+
+function renderProjectsList(snap) {
+  const el = document.getElementById('projects-list');
+  if(snap.empty) {
+    el.innerHTML = '<div style="color:#aaa;font-size:13px;padding:1rem 0">Sin proyectos todavía. Crea el primero.</div>';
+    return;
+  }
+  const docs = [];
+  snap.forEach(d => docs.push({id: d.id, ...d.data()}));
+  docs.sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0));
+  el.innerHTML = docs.map(p => `
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:#fff;border:1px solid #e8e6e0;border-radius:12px;margin-bottom:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14px;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.nombre||'Sin nombre'}</div>
+        <div style="font-size:11px;color:#aaa;margin-top:2px">${p.subtitulo||''}</div>
+      </div>
+      <button onclick="openProject('${p.id}')" style="padding:7px 16px;background:#1D9E75;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer">Abrir</button>
+      <button onclick="confirmDeleteProject('${p.id}','${(p.nombre||'').replace(/'/g,"\\'")}') " style="padding:7px 12px;background:#fff;color:#E24B4A;border:1px solid #E24B4A;border-radius:8px;font-size:13px;cursor:pointer">×</button>
+    </div>`).join('');
+}
+
+window.openProject = async (id) => {
+  currentProjectId = id;
+  const q = query(collection(db, 'proyectos'), where('owner', '==', currentUser.uid));
+  const snap = await getDocs(q);
+  let data = null;
+  snap.forEach(d => { if(d.id === id) data = d.data(); });
+  if(!data) return;
+  // Load into app state
+  stages = data.stages || [];
+  restDow = new Set(data.restDow || [6]);
+  restDays = new Map(Object.entries(data.restDays || {}));
+  logoEmpresaB64 = data.logoEmpresa || '';
+  logoProyectoB64 = data.logoProyecto || '';
+  document.getElementById('projectName').value = data.nombre || '';
+  document.getElementById('projectSubtitle').value = data.subtitulo || '';
+  if(logoEmpresaB64) document.getElementById('logo-empresa-preview').innerHTML = `<img src="${logoEmpresaB64}" style="width:100%;height:100%;object-fit:contain;border-radius:9px">`;
+  else document.getElementById('logo-empresa-preview').innerHTML = `<span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>empresa</span>`;
+  if(logoProyectoB64) document.getElementById('logo-proyecto-preview').innerHTML = `<img src="${logoProyectoB64}" style="width:100%;height:100%;object-fit:contain;border-radius:9px">`;
+  else document.getElementById('logo-proyecto-preview').innerHTML = `<span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>proyecto</span>`;
+
+  document.getElementById('screen-projects').style.display = 'none';
+  document.getElementById('screen-app').style.display = 'block';
+  renderDowGrid(); renderList(); renderCalendar(); initAllPickers();
+  switchTab('cronograma');
+};
+
+window.goToProjects = () => {
+  if(unsubscribeProject){ unsubscribeProject(); unsubscribeProject=null; }
+  currentProjectId = null;
+  stages=[]; restDow=new Set([6]); restDays=new Map(); logoEmpresaB64=''; logoProyectoB64='';
+  document.getElementById('screen-app').style.display = 'none';
+  document.getElementById('screen-projects').style.display = 'block';
+  loadProjects();
+};
+
+window.createProject = async () => {
+  const nombre = document.getElementById('new-project-name').value.trim();
+  if(!nombre){ alert('Escribe el nombre del proyecto.'); return; }
+  const id = Date.now().toString();
+  await setDoc(doc(db, 'proyectos', id), {
+    owner: currentUser.uid, nombre, subtitulo: '', stages: [],
+    restDow: [6], restDays: {}, logoEmpresa: '', logoProyecto: '',
+    updatedAt: Date.now()
+  });
+  document.getElementById('new-project-name').value = '';
+  document.getElementById('new-project-form').style.display = 'none';
+  openProject(id);
+};
+
+window.confirmDeleteProject = (id, nombre) => {
+  if(confirm(`¿Eliminar el proyecto "${nombre}"? Esta acción no se puede deshacer.`))
+    deleteProject(id);
+};
+async function deleteProject(id) {
+  await deleteDoc(doc(db, 'proyectos', id));
+  loadProjects();
+}
+
+// ── AUTO-SAVE ──────────────────────────────────────────────────────────────
+function scheduleSave() {
+  if(!currentProjectId || !currentUser) return;
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(saveProject, 800);
+}
+async function saveProject() {
+  if(!currentProjectId || !currentUser) return;
+  const restDaysObj = {};
+  restDays.forEach((v,k) => restDaysObj[k] = v);
+  await setDoc(doc(db, 'proyectos', currentProjectId), {
+    owner: currentUser.uid,
+    nombre: document.getElementById('projectName').value || '',
+    subtitulo: document.getElementById('projectSubtitle').value || '',
+    stages: stages.map(s=>({...s})),
+    restDow: [...restDow],
+    restDays: restDaysObj,
+    logoEmpresa: logoEmpresaB64,
+    logoProyecto: logoProyectoB64,
+    updatedAt: Date.now()
+  }, {merge: true});
+  showSaveIndicator();
+}
+function showSaveIndicator() {
+  const el = document.getElementById('save-indicator');
+  if(!el) return;
+  el.textContent = '✓ Guardado';
+  el.style.opacity = '1';
+  setTimeout(() => el.style.opacity = '0', 2000);
+}
+
+// expose saveProject for name/subtitle changes
+window.onNameChange = () => scheduleSave();
+
+// Make scheduleSave global for app functions
+window._scheduleSave = scheduleSave;
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f4f0;color:#222;min-height:100vh}
+
+/* ── LOGIN ── */
+#screen-login{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:24px}
+.login-card{background:#fff;border:1px solid #e8e6e0;border-radius:16px;padding:2.5rem 2rem;text-align:center;max-width:360px;width:90%;box-shadow:0 4px 24px rgba(0,0,0,0.07)}
+.login-card h1{font-size:22px;font-weight:700;color:#1A1A1A;margin-bottom:6px}
+.login-card p{font-size:13px;color:#888;margin-bottom:24px;line-height:1.5}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:11px 20px;background:#fff;border:1px solid #e0ddd8;border-radius:10px;font-size:14px;font-weight:600;color:#222;cursor:pointer;transition:background 0.15s}
+.btn-google:hover{background:#f5f4f0}
+.btn-google svg{width:20px;height:20px;flex-shrink:0}
+
+/* ── PROJECTS ── */
+#screen-projects{display:none;max-width:600px;margin:0 auto;padding:2rem 1rem}
+.projects-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
+.user-row{display:flex;align-items:center;gap:8px}
+.user-photo{width:32px;height:32px;border-radius:50%;object-fit:cover}
+
+/* ── APP ── */
+#screen-app{display:none}
 .app{max-width:960px;margin:0 auto;padding:1.5rem 1rem}
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid #e8e6e0}
+.topbar-left{display:flex;align-items:center;gap:8px;cursor:pointer;color:#888;font-size:13px}
+.topbar-left:hover{color:#222}
 .header{display:flex;align-items:flex-start;gap:12px;margin-bottom:1.25rem;flex-wrap:wrap}
 .header-texts{flex:1;display:flex;flex-direction:column;gap:4px}
 .project-input{font-size:20px;font-weight:600;border:none;border-bottom:2px solid #d3d1c7;background:transparent;color:#222;padding:4px 2px;outline:none;width:100%}
@@ -72,7 +268,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .dow-btn{padding:10px 4px;border:1px solid #e0ddd8;border-radius:10px;background:#fff;color:#666;cursor:pointer;font-size:13px;font-weight:600;text-align:center;line-height:1.4}
 .dow-btn:hover{background:#f5f4f0}
 .dow-btn.active{background:#B4B2A9 !important;color:#2C2C2A !important;border-color:#888780 !important}
-.dow-btn.active:hover{background:#888780 !important;color:#fff !important}
 .rest-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .rest-tag{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#f5f4f0;border:1px solid #e0ddd8;border-radius:20px;font-size:11px;color:#666}
 .rest-tag .x{cursor:pointer;color:#aaa;font-size:15px;line-height:1}
@@ -123,101 +318,156 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .conflict-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .orient-option{flex:1;padding:18px 14px;border:1px solid #e0ddd8;border-radius:12px;background:#faf9f7;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:10px;transition:border-color 0.15s}
 .orient-option:hover{border-color:#1D9E75;background:#fff}
+#save-indicator{font-size:11px;color:#1D9E75;opacity:0;transition:opacity 0.4s;margin-left:auto}
 </style>
 </head>
 <body>
+
+<!-- ── LOGIN ── -->
+<div id="screen-login">
+  <div class="login-card">
+    <div style="width:52px;height:52px;background:#1D9E75;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#fff" stroke-width="1.8"/><path d="M3 9h18" stroke="#fff" stroke-width="1.8"/><path d="M8 2v4M16 2v4" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </div>
+    <h1>Cronograma de Producción</h1>
+    <p>Inicia sesión para acceder a tus proyectos</p>
+    <button class="btn-google" onclick="loginGoogle()">
+      <svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      Continuar con Google
+    </button>
+  </div>
+</div>
+
+<!-- ── PROJECTS ── -->
+<div id="screen-projects">
+  <div class="projects-header">
+    <div>
+      <div style="font-size:20px;font-weight:700;color:#1A1A1A">Mis proyectos</div>
+      <div style="font-size:12px;color:#aaa;margin-top:2px">Cronograma de Producción</div>
+    </div>
+    <div class="user-row">
+      <img class="user-photo" id="user-photo" src="" alt="">
+      <span id="user-name" style="font-size:13px;color:#666"></span>
+      <button onclick="logOut()" style="font-size:12px;color:#aaa;background:none;border:none;cursor:pointer;padding:4px 8px">Salir</button>
+    </div>
+  </div>
+
+  <div id="new-project-form" style="display:none;background:#fff;border:1px solid #e8e6e0;border-radius:12px;padding:1rem;margin-bottom:1rem">
+    <div style="font-size:12px;color:#888;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Nuevo proyecto</div>
+    <div style="display:flex;gap:8px">
+      <input id="new-project-name" type="text" placeholder="Nombre del proyecto..." style="flex:1;font-size:13px;padding:8px 10px;border:1px solid #e0ddd8;border-radius:8px;background:#faf9f7;color:#222" onkeydown="if(event.key==='Enter')createProject()">
+      <button class="btn btn-primary" onclick="createProject()">Crear</button>
+      <button class="btn" onclick="document.getElementById('new-project-form').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" style="margin-bottom:1rem;width:100%" onclick="document.getElementById('new-project-form').style.display='block';document.getElementById('new-project-name').focus()">+ Nuevo proyecto</button>
+  <div id="projects-list"></div>
+</div>
+
+<!-- ── APP ── -->
+<div id="screen-app">
 <div class="app">
 
-<!-- HEADER -->
-<div class="header">
-  <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-    <div class="logo-box" id="logo-empresa-preview" onclick="document.getElementById('inp-logo-empresa').click()" title="Clic para subir logo empresa">
-      <span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>empresa</span>
+  <!-- topbar -->
+  <div class="topbar">
+    <div class="topbar-left" onclick="goToProjects()">
+      ← <span style="margin-left:4px">Mis proyectos</span>
     </div>
-    <input id="inp-logo-empresa" type="file" accept="image/*" style="display:none" onchange="loadLogo('empresa',this)">
+    <span id="save-indicator"></span>
+    <button onclick="logOut()" style="font-size:12px;color:#aaa;background:none;border:none;cursor:pointer;padding:4px 8px;margin-left:8px">Salir</button>
   </div>
-  <div class="header-texts">
-    <input class="project-input" id="projectName" type="text" placeholder="Nombre del proyecto...">
-    <input class="subtitle-input" id="projectSubtitle" type="text" placeholder="Subtítulo del documento...">
-  </div>
-  <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-    <div class="logo-box" id="logo-proyecto-preview" onclick="document.getElementById('inp-logo-proyecto').click()" title="Clic para subir logo proyecto">
-      <span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>proyecto</span>
-    </div>
-    <input id="inp-logo-proyecto" type="file" accept="image/*" style="display:none" onchange="loadLogo('proyecto',this)">
-  </div>
-  <button class="btn btn-primary" onclick="renderCalendar()">Actualizar calendario</button>
-</div>
 
-<div class="tabs">
-  <button class="tab active" onclick="switchTab('cronograma')">Cronograma</button>
-  <button class="tab" onclick="switchTab('config')">Configuración</button>
-</div>
-
-<div id="tab-cronograma">
-  <div class="card" id="calSection"><div style="color:#aaa;font-size:13px;text-align:center;padding:3rem">Agrega etapas en Configuración para ver el cronograma.</div></div>
-  <div class="export-row">
-    <button class="btn" onclick="showPDFOrientModal()">Exportar PDF</button>
-
-  </div>
-</div>
-
-<div id="tab-config" style="display:none">
-  <div class="card">
-    <h3>Nueva etapa</h3>
-    <div class="form-row"><label>Nombre</label><input type="text" id="stageName" placeholder="PREP, SHOOT..."></div>
-    <div class="form-row"><label>Color</label><input type="color" class="color-pick" id="stageColor" value="#1D9E75"></div>
-    <div class="form-row"><label>Notas</label><textarea id="stageNotes" placeholder="Notas opcionales..."></textarea></div>
-    <div class="mode-toggle">
-      <button class="mode-btn active" id="modeBtn-dates" onclick="setMode('dates')">Fechas exactas</button>
-      <button class="mode-btn" id="modeBtn-weeks" onclick="setMode('weeks')">Inicio + semanas</button>
-    </div>
-    <div id="mode-dates">
-      <div class="form-row"><label>Inicio</label><div class="date-input-wrap" id="wrap-stageStart"></div></div>
-      <div class="form-row"><label>Fin</label><div class="date-input-wrap" id="wrap-stageEnd"></div></div>
-    </div>
-    <div id="mode-weeks" style="display:none">
-      <div class="form-row"><label>Inicio</label><div class="date-input-wrap" id="wrap-stageStartW"></div></div>
-      <div class="form-row"><label>Duración</label>
-        <div class="weeks-row"><input type="number" id="stageWeeks" min="1" max="104" value="4" oninput="updateWeeksPreview()"><span>semanas</span></div>
+  <!-- header -->
+  <div class="header">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div class="logo-box" id="logo-empresa-preview" onclick="document.getElementById('inp-logo-empresa').click()" title="Clic para subir logo empresa">
+        <span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>empresa</span>
       </div>
-      <div class="date-preview" id="weeksPreview"></div>
+      <input id="inp-logo-empresa" type="file" accept="image/*" style="display:none" onchange="loadLogo('empresa',this)">
     </div>
-    <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
-      <button class="btn btn-primary" onclick="addStage()">+ Agregar etapa</button>
-      <span id="addMsg" style="font-size:12px;color:#E24B4A"></span>
+    <div class="header-texts">
+      <input class="project-input" id="projectName" type="text" placeholder="Nombre del proyecto..." oninput="onNameChange()">
+      <input class="subtitle-input" id="projectSubtitle" type="text" placeholder="Subtítulo del documento..." oninput="onNameChange()">
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div class="logo-box" id="logo-proyecto-preview" onclick="document.getElementById('inp-logo-proyecto').click()" title="Clic para subir logo proyecto">
+        <span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>proyecto</span>
+      </div>
+      <input id="inp-logo-proyecto" type="file" accept="image/*" style="display:none" onchange="loadLogo('proyecto',this)">
+    </div>
+    <button class="btn btn-primary" onclick="renderCalendar()">Actualizar</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('cronograma')">Cronograma</button>
+    <button class="tab" onclick="switchTab('config')">Configuración</button>
+  </div>
+
+  <div id="tab-cronograma">
+    <div class="card" id="calSection"><div style="color:#aaa;font-size:13px;text-align:center;padding:3rem">Agrega etapas en Configuración para ver el cronograma.</div></div>
+    <div class="export-row">
+      <button class="btn" onclick="showPDFOrientModal()">Exportar PDF</button>
     </div>
   </div>
-  <div class="card">
-    <h3>Etapas del proyecto</h3>
-    <div class="etapas-list" id="etapasList"><div style="color:#aaa;font-size:12px">Sin etapas todavía.</div></div>
-  </div>
-  <div class="card">
-    <h3>Días de descanso recurrentes</h3>
-    <p style="font-size:12px;color:#888;margin-bottom:12px">Días de la semana que son de descanso en todo el proyecto.</p>
-    <div class="dow-grid" id="dowGrid"></div>
-  </div>
-  <div class="card">
-    <h3>Días de descanso puntuales</h3>
-    <p style="font-size:12px;color:#888;margin-bottom:12px">Feriados, pausas específicas.</p>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-      <span style="font-size:12px;color:#666;min-width:42px">Desde</span>
-      <div class="date-input-wrap" id="wrap-restFrom" style="flex:1;min-width:120px"></div>
-      <span style="font-size:12px;color:#666">Hasta</span>
-      <div class="date-input-wrap" id="wrap-restTo" style="flex:1;min-width:120px"></div>
+
+  <div id="tab-config" style="display:none">
+    <div class="card">
+      <h3>Nueva etapa</h3>
+      <div class="form-row"><label>Nombre</label><input type="text" id="stageName" placeholder="PREP, SHOOT..."></div>
+      <div class="form-row"><label>Color</label><input type="color" class="color-pick" id="stageColor" value="#1D9E75"></div>
+      <div class="form-row"><label>Notas</label><textarea id="stageNotes" placeholder="Notas opcionales..."></textarea></div>
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="modeBtn-dates" onclick="setMode('dates')">Fechas exactas</button>
+        <button class="mode-btn" id="modeBtn-weeks" onclick="setMode('weeks')">Inicio + semanas</button>
+      </div>
+      <div id="mode-dates">
+        <div class="form-row"><label>Inicio</label><div class="date-input-wrap" id="wrap-stageStart"></div></div>
+        <div class="form-row"><label>Fin</label><div class="date-input-wrap" id="wrap-stageEnd"></div></div>
+      </div>
+      <div id="mode-weeks" style="display:none">
+        <div class="form-row"><label>Inicio</label><div class="date-input-wrap" id="wrap-stageStartW"></div></div>
+        <div class="form-row"><label>Duración</label>
+          <div class="weeks-row"><input type="number" id="stageWeeks" min="1" max="104" value="4" oninput="updateWeeksPreview()"><span>semanas</span></div>
+        </div>
+        <div class="date-preview" id="weeksPreview"></div>
+      </div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+        <button class="btn btn-primary" onclick="addStage()">+ Agregar etapa</button>
+        <span id="addMsg" style="font-size:12px;color:#E24B4A"></span>
+      </div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
-      <span style="font-size:12px;color:#666;min-width:42px">Nota</span>
-      <input type="text" id="restLabel" placeholder="Descripción (opcional)" style="font-size:12px;padding:7px 10px;border:1px solid #e0ddd8;border-radius:8px;background:#faf9f7;color:#222;flex:1;min-width:100px">
-      <button class="btn btn-primary" style="font-size:12px;padding:7px 14px" onclick="addRestDay()">+ Agregar</button>
+    <div class="card">
+      <h3>Etapas del proyecto</h3>
+      <div class="etapas-list" id="etapasList"><div style="color:#aaa;font-size:12px">Sin etapas todavía.</div></div>
     </div>
-    <div class="rest-tags" id="restTags"><div class="rest-empty">Sin días puntuales.</div></div>
+    <div class="card">
+      <h3>Días de descanso recurrentes</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:12px">Días de la semana que son de descanso en todo el proyecto.</p>
+      <div class="dow-grid" id="dowGrid"></div>
+    </div>
+    <div class="card">
+      <h3>Días de descanso puntuales</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:12px">Feriados, pausas específicas.</p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-size:12px;color:#666;min-width:42px">Desde</span>
+        <div class="date-input-wrap" id="wrap-restFrom" style="flex:1;min-width:120px"></div>
+        <span style="font-size:12px;color:#666">Hasta</span>
+        <div class="date-input-wrap" id="wrap-restTo" style="flex:1;min-width:120px"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <span style="font-size:12px;color:#666;min-width:42px">Nota</span>
+        <input type="text" id="restLabel" placeholder="Descripción (opcional)" style="font-size:12px;padding:7px 10px;border:1px solid #e0ddd8;border-radius:8px;background:#faf9f7;color:#222;flex:1;min-width:100px">
+        <button class="btn btn-primary" style="font-size:12px;padding:7px 14px" onclick="addRestDay()">+ Agregar</button>
+      </div>
+      <div class="rest-tags" id="restTags"><div class="rest-empty">Sin días puntuales.</div></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
+      <button class="btn btn-primary" onclick="applyConfig()">Aplicar al calendario</button>
+    </div>
   </div>
-  <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
-    <button class="btn btn-primary" onclick="applyConfig()">Aplicar al calendario</button>
-  </div>
+  <div id="modalContainer"></div>
 </div>
-<div id="modalContainer"></div>
 </div>
 
 <script>
@@ -230,24 +480,6 @@ const MES3=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','D
 const DOW_LABELS=['L','M','X','J','V','S','D'];
 const DOW_FULL=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 
-// ── LOGOS ──────────────────────────────────────────────────────────────────
-function loadLogo(which, input){
-  const file=input.files[0]; if(!file) return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const b64=e.target.result;
-    if(which==='empresa'){
-      logoEmpresaB64=b64;
-      document.getElementById('logo-empresa-preview').innerHTML=`<img src="${b64}" style="width:100%;height:100%;object-fit:contain;border-radius:9px">`;
-    } else {
-      logoProyectoB64=b64;
-      document.getElementById('logo-proyecto-preview').innerHTML=`<img src="${b64}" style="width:100%;height:100%;object-fit:contain;border-radius:9px">`;
-    }
-  };
-  reader.readAsDataURL(file);
-}
-
-// ── HELPERS ────────────────────────────────────────────────────────────────
 function nextColor(){ return PALETTE[stages.length % PALETTE.length]; }
 function nextMonday(dateStr){
   const d=new Date(dateStr+'T00:00:00');
@@ -263,18 +495,28 @@ function isRestDay(y,m,d){return isRestDayStr(dtStr(y,m,d));}
 function calcWorkDays(s,e){let c=0,cur=new Date(s+'T00:00:00'),en=new Date(e+'T00:00:00');while(cur<=en){if(!isRestDayStr(cur.toISOString().split('T')[0]))c++;cur.setDate(cur.getDate()+1);}return c;}
 function countRestInRange(s,e){let c=0,cur=new Date(s+'T00:00:00'),en=new Date(e+'T00:00:00');while(cur<=en){if(isRestDayStr(cur.toISOString().split('T')[0]))c++;cur.setDate(cur.getDate()+1);}return c;}
 function extendEnd(start,weeks){
-  const d=new Date(start+'T00:00:00');
-  d.setDate(d.getDate()+weeks*7-1);
+  const d=new Date(start+'T00:00:00');d.setDate(d.getDate()+weeks*7-1);
   while(isRestDayStr(d.toISOString().split('T')[0])) d.setDate(d.getDate()-1);
   return d.toISOString().split('T')[0];
 }
-function calcDuration(s,e){
-  const td=Math.round((new Date(e)-new Date(s))/864e5)+1,tw=Math.round(td/7);
-  return tw>=2?`${tw} semanas`:`${td} días`;
-}
+function calcDuration(s,e){const td=Math.round((new Date(e)-new Date(s))/864e5)+1,tw=Math.round(td/7);return tw>=2?`${tw} semanas`:`${td} días`;}
 function stageHasConflict(s,e){return countRestInRange(s,e)>0;}
 function getStagesForDay(y,m,d){const dt=dtStr(y,m,d);return stages.filter(st=>{if(st.restMode==='subtract'&&isRestDayStr(dt))return false;return dt>=st.start&&dt<=st.end;});}
 function showAddMsg(msg){const el=document.getElementById('addMsg');if(el){el.textContent=msg;if(msg)setTimeout(()=>{el.textContent=''},3000);}}
+function triggerSave(){if(window._scheduleSave)window._scheduleSave();}
+
+// ── LOGOS ──────────────────────────────────────────────────────────────────
+function loadLogo(which, input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const b64=e.target.result;
+    if(which==='empresa'){logoEmpresaB64=b64;document.getElementById('logo-empresa-preview').innerHTML=`<img src="${b64}" style="width:100%;height:100%;object-fit:contain;border-radius:9px">`;}
+    else{logoProyectoB64=b64;document.getElementById('logo-proyecto-preview').innerHTML=`<img src="${b64}" style="width:100%;height:100%;object-fit:contain;border-radius:9px">`;}
+    triggerSave();
+  };
+  reader.readAsDataURL(file);
+}
 
 // ── DATE PICKER ────────────────────────────────────────────────────────────
 let activePicker=null;
@@ -333,7 +575,6 @@ function setPickerVal(id,val){pickerValues[id]=val;}
 function setPickerMin(id,val){pickerMinValues[id]=val;}
 function clearPickerVal(id){pickerValues[id]='';}
 
-// ── PICKERS INIT ───────────────────────────────────────────────────────────
 function initAllPickers(){
   initPicker('wrap-stageStart','Fecha de inicio',null,val=>{setPickerMin('wrap-stageEnd',val);if(!getPickerVal('wrap-stageEnd')||getPickerVal('wrap-stageEnd')<val){setPickerVal('wrap-stageEnd',val);renderPickerBtn('wrap-stageEnd','Fecha de fin');}updateWeeksPreview();});
   initPicker('wrap-stageEnd','Fecha de fin',null,()=>{});
@@ -354,19 +595,19 @@ function setMode(m){inputMode=m;document.getElementById('mode-dates').style.disp
 function updateWeeksPreview(){const s=getPickerVal('wrap-stageStartW'),w=parseInt(document.getElementById('stageWeeks').value)||0,el=document.getElementById('weeksPreview');if(s&&w>0)el.textContent=`Fin estimado: ${fmtDate(extendEnd(s,w))}`;else el.textContent='';}
 function switchTab(t){document.getElementById('tab-cronograma').style.display=t==='cronograma'?'block':'none';document.getElementById('tab-config').style.display=t==='config'?'block':'none';document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',(i===0&&t==='cronograma')||(i===1&&t==='config')));if(t==='config'){renderDowGrid();renderList();initAllPickers();}}
 function renderDowGrid(){document.getElementById('dowGrid').innerHTML=DOW_LABELS.map((lbl,i)=>`<button class="dow-btn${restDow.has(i)?' active':''}" onclick="toggleDow(${i})">${lbl}<br><span style="font-size:9px;font-weight:400;opacity:0.7">${DOW_FULL[i].slice(0,3)}</span></button>`).join('');}
-function toggleDow(i){restDow.has(i)?restDow.delete(i):restDow.add(i);renderDowGrid();const af=stages.filter(s=>stageHasConflict(s.start,s.end));if(af.length)showRestConflictModal(af);}
+function toggleDow(i){restDow.has(i)?restDow.delete(i):restDow.add(i);renderDowGrid();triggerSave();const af=stages.filter(s=>stageHasConflict(s.start,s.end));if(af.length)showRestConflictModal(af);}
 function addRestDay(){
   const from=getPickerVal('wrap-restFrom'),to=getPickerVal('wrap-restTo')||from,lbl=document.getElementById('restLabel').value.trim();
   if(!from)return;if(to<from){alert('La fecha "Hasta" debe ser igual o posterior.');return;}
   let cur=new Date(from+'T00:00:00'),end=new Date(to+'T00:00:00');
   while(cur<=end){restDays.set(cur.toISOString().split('T')[0],lbl);cur.setDate(cur.getDate()+1);}
   clearPickerVal('wrap-restFrom');clearPickerVal('wrap-restTo');renderPickerBtn('wrap-restFrom','Desde');renderPickerBtn('wrap-restTo','Hasta');
-  document.getElementById('restLabel').value='';renderRestTags();
+  document.getElementById('restLabel').value='';renderRestTags();triggerSave();
   const af=stages.filter(s=>stageHasConflict(s.start,s.end));if(af.length)showRestConflictModal(af);
 }
 function removeRest(key){
   if(key.includes('|')){const[f,t]=key.split('|');let cur=new Date(f+'T00:00:00'),end=new Date(t+'T00:00:00');while(cur<=end){restDays.delete(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}}else restDays.delete(key);
-  renderRestTags();stages.forEach(s=>s.restMode=null);renderCalendar();
+  renderRestTags();stages.forEach(s=>s.restMode=null);renderCalendar();triggerSave();
 }
 function renderRestTags(){
   const el=document.getElementById('restTags'),sorted=[...restDays.keys()].sort();
@@ -377,7 +618,6 @@ function renderRestTags(){
 }
 function applyConfig(){renderCalendar();switchTab('cronograma');}
 
-// ── REST CONFLICT ──────────────────────────────────────────────────────────
 function showRestConflictModal(aff){
   const idx=aff.map(s=>stages.indexOf(s));
   const list=aff.map(s=>`<div class="conflict-item"><div class="conflict-dot" style="background:${s.color}"></div><span>${s.name} <span style="color:#aaa">(${fmtDate(s.start)} → ${fmtDate(s.end)})</span></span></div>`).join('');
@@ -401,10 +641,9 @@ function applyRestMode(mode,idx){
     if(mode==='ignore')s.restMode='none';
     else if(mode==='subtract')s.restMode='subtract';
     else if(mode==='skip'){const wd=calcWorkDays(s.start,s.end);s.end=extendEnd(s.start,Math.round(wd/6));s.restMode='skip';}
-  });closeModalDirect();renderList();renderCalendar();
+  });closeModalDirect();renderList();renderCalendar();triggerSave();
 }
 
-// ── STAGES LIST ────────────────────────────────────────────────────────────
 function renderList(){
   const el=document.getElementById('etapasList');if(!el)return;
   if(!stages.length){el.innerHTML='<div style="color:#aaa;font-size:12px;padding:4px 0">Sin etapas todavía.</div>';return;}
@@ -422,7 +661,6 @@ function renderList(){
   }).join('');
 }
 
-// ── ADD STAGE ──────────────────────────────────────────────────────────────
 function addStage(){
   const n=(document.getElementById('stageName').value||'').trim(),c=document.getElementById('stageColor').value||'#1D9E75',nt=(document.getElementById('stageNotes').value||'').trim();
   let s='',e='';
@@ -438,12 +676,10 @@ function addStage(){
   document.getElementById('stageName').value='';document.getElementById('stageNotes').value='';
   clearPickerVal('wrap-stageStart');clearPickerVal('wrap-stageEnd');clearPickerVal('wrap-stageStartW');
   document.getElementById('stageWeeks').value='4';document.getElementById('weeksPreview').textContent='';
-  showAddMsg('');renderList();renderCalendar();
-  initAllPickers();
+  showAddMsg('');renderList();renderCalendar();initAllPickers();triggerSave();
   if(stageHasConflict(s,e))showRestConflictModal([ns]);
 }
 
-// ── CALENDAR RENDER ────────────────────────────────────────────────────────
 function renderCalendar(){
   const calEl=document.getElementById('calSection');if(!calEl)return;
   if(!stages.length){calEl.innerHTML='<div style="color:#aaa;font-size:13px;text-align:center;padding:3rem">Agrega etapas en Configuración para ver el cronograma.</div>';return;}
@@ -483,7 +719,6 @@ function renderCalendar(){
   calEl.innerHTML=html;
 }
 
-// ── EDIT MODAL ─────────────────────────────────────────────────────────────
 function openEditModal(i){
   const s=stages[i],weeks=Math.round((Math.round((new Date(s.end)-new Date(s.start))/864e5)+1)/7);
   pickerValues['me-wrap-start']=s.start;pickerValues['me-wrap-end']=s.end;pickerValues['me-wrap-startW']=s.start;
@@ -499,8 +734,8 @@ function openEditModal(i){
     </div>
     <div id="me-mode-dates">
       <div style="display:flex;gap:8px;margin-bottom:10px">
-        <div style="flex:1"><div style="font-size:11px;color:#888;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Inicio</div><div class="date-input-wrap" id="me-wrap-start"></div></div>
-        <div style="flex:1"><div style="font-size:11px;color:#888;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Fin</div><div class="date-input-wrap" id="me-wrap-end"></div></div>
+        <div style="flex:1"><div style="font-size:11px;color:#888;margin-bottom:5px;text-transform:uppercase;font-weight:600">Inicio</div><div class="date-input-wrap" id="me-wrap-start"></div></div>
+        <div style="flex:1"><div style="font-size:11px;color:#888;margin-bottom:5px;text-transform:uppercase;font-weight:600">Fin</div><div class="date-input-wrap" id="me-wrap-end"></div></div>
       </div>
     </div>
     <div id="me-mode-weeks" style="display:none">
@@ -540,61 +775,48 @@ function requestConfirmEdit(i){
     <div class="modal-actions"><button class="btn" onclick="openEditModal(${i})">← Volver</button><button class="btn btn-primary" onclick="applyEdit(${i},'${n.replace(/'/g,"\\'")}','${s}','${e}','${c}','${t.replace(/'/g,"\\'")}')">Aceptar</button></div>
   </div></div>`;
 }
-function applyEdit(i,n,s,e,c,t){stages[i]={...stages[i],name:n,start:s,end:e,color:c,notes:t,restMode:null};closeModalDirect();renderList();renderCalendar();if(stageHasConflict(s,e))showRestConflictModal([stages[i]]);}
+function applyEdit(i,n,s,e,c,t){stages[i]={...stages[i],name:n,start:s,end:e,color:c,notes:t,restMode:null};closeModalDirect();renderList();renderCalendar();triggerSave();if(stageHasConflict(s,e))showRestConflictModal([stages[i]]);}
 function confirmDelete(i){document.getElementById('modalContainer').innerHTML=`<div class="modal-overlay"><div class="modal" onclick="event.stopPropagation()"><h4>¿Eliminar etapa?</h4><p class="modal-confirm-msg">Estás por eliminar <strong>${stages[i].name}</strong>.</p><div class="modal-actions"><button class="btn" onclick="closeModalDirect()">Cancelar</button><button class="btn" style="background:#E24B4A;color:#fff;border-color:#E24B4A" onclick="doDelete(${i})">Eliminar</button></div></div></div>`;}
-function doDelete(i){stages.splice(i,1);closeModalDirect();renderList();renderCalendar();}
+function doDelete(i){stages.splice(i,1);closeModalDirect();renderList();renderCalendar();triggerSave();}
 function closeModal(e){if(e.target.classList.contains('modal-overlay'))closeModalDirect();}
 function closeModalDirect(){document.getElementById('modalContainer').innerHTML='';closePicker();}
 
 // ── PDF EXPORT ─────────────────────────────────────────────────────────────
 function showPDFOrientModal(){
   document.getElementById('modalContainer').innerHTML=`
-  <div class="modal-overlay" onclick="closeModal(event)">
-    <div class="modal" onclick="event.stopPropagation()">
-      <h4>Exportar PDF</h4>
-      <p>¿En qué orientación quieres exportar el documento?</p>
-      <div style="display:flex;gap:12px;margin:1rem 0">
-        <button class="orient-option" onclick="closeModalDirect();exportPDF('portrait')">
-          <svg width="36" height="48" viewBox="0 0 36 48" fill="none"><rect x="1" y="1" width="34" height="46" rx="3" fill="white" stroke="#B4B2A9" stroke-width="1.5"/><rect x="5" y="6" width="26" height="2.5" rx="1" fill="#D3D1C7"/><rect x="5" y="12" width="26" height="7" rx="1.5" fill="#AFA9EC"/><rect x="5" y="22" width="26" height="7" rx="1.5" fill="#5DCAA5"/><rect x="5" y="32" width="26" height="2" rx="1" fill="#E8E6E0"/><rect x="5" y="36" width="26" height="2" rx="1" fill="#E8E6E0"/></svg>
-          <span style="font-size:13px;font-weight:600;color:#222">Vertical</span>
-          <span style="font-size:11px;color:#aaa">Carta portrait</span>
-        </button>
-        <button class="orient-option" onclick="closeModalDirect();exportPDF('landscape')">
-          <svg width="48" height="36" viewBox="0 0 48 36" fill="none"><rect x="1" y="1" width="46" height="34" rx="3" fill="white" stroke="#B4B2A9" stroke-width="1.5"/><rect x="5" y="5" width="38" height="2.5" rx="1" fill="#D3D1C7"/><rect x="5" y="10" width="17" height="5" rx="1" fill="#AFA9EC"/><rect x="24" y="10" width="19" height="5" rx="1" fill="#5DCAA5"/><rect x="5" y="17" width="17" height="5" rx="1" fill="#D85A30"/><rect x="24" y="17" width="19" height="5" rx="1" fill="#E9B44C"/><rect x="5" y="25" width="38" height="2" rx="1" fill="#E8E6E0"/></svg>
-          <span style="font-size:13px;font-weight:600;color:#222">Horizontal</span>
-          <span style="font-size:11px;color:#aaa">Carta landscape</span>
-        </button>
-      </div>
-      <div style="display:flex;justify-content:flex-end"><button class="btn" onclick="closeModalDirect()">Cancelar</button></div>
+  <div class="modal-overlay" onclick="closeModal(event)"><div class="modal" onclick="event.stopPropagation()">
+    <h4>Exportar PDF</h4><p>¿En qué orientación quieres exportar?</p>
+    <div style="display:flex;gap:12px;margin:1rem 0">
+      <button class="orient-option" onclick="closeModalDirect();exportPDF('portrait')">
+        <svg width="36" height="48" viewBox="0 0 36 48" fill="none"><rect x="1" y="1" width="34" height="46" rx="3" fill="white" stroke="#B4B2A9" stroke-width="1.5"/><rect x="5" y="6" width="26" height="2.5" rx="1" fill="#D3D1C7"/><rect x="5" y="12" width="26" height="7" rx="1.5" fill="#AFA9EC"/><rect x="5" y="22" width="26" height="7" rx="1.5" fill="#5DCAA5"/></svg>
+        <span style="font-size:13px;font-weight:600;color:#222">Vertical</span>
+      </button>
+      <button class="orient-option" onclick="closeModalDirect();exportPDF('landscape')">
+        <svg width="48" height="36" viewBox="0 0 48 36" fill="none"><rect x="1" y="1" width="46" height="34" rx="3" fill="white" stroke="#B4B2A9" stroke-width="1.5"/><rect x="5" y="5" width="38" height="2.5" rx="1" fill="#D3D1C7"/><rect x="5" y="10" width="17" height="5" rx="1" fill="#AFA9EC"/><rect x="24" y="10" width="19" height="5" rx="1" fill="#5DCAA5"/></svg>
+        <span style="font-size:13px;font-weight:600;color:#222">Horizontal</span>
+      </button>
     </div>
-  </div>`;
+    <div style="display:flex;justify-content:flex-end"><button class="btn" onclick="closeModalDirect()">Cancelar</button></div>
+  </div></div>`;
 }
 
 function exportPDF(orientation){
   if(!stages.length){alert('Agrega etapas primero.');return;}
   const isL=(orientation==='landscape');
-  const PW=isL?1056:816, PH=isL?816:1056, PAD=48, cols=isL?4:3;
+  const PW=isL?1056:816,PAD=48,cols=isL?4:3;
   const pname=document.getElementById('projectName').value||'Proyecto';
   const subtitle=document.getElementById('projectSubtitle').value||'';
   const today=new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
   const allD=stages.flatMap(s=>[s.start,s.end]);
-  const minY=Math.min(...allD.map(d=>+d.split('-')[0]));
-  const maxY=Math.max(...allD.map(d=>+d.split('-')[0]));
-
+  const minY=Math.min(...allD.map(d=>+d.split('-')[0])),maxY=Math.max(...allD.map(d=>+d.split('-')[0]));
   const yGroups=[];
   for(let y=minY;y<=maxY;y++){
-    const ms=stages.flatMap(s=>{
-      const sy=+s.start.split('-')[0],ey=+s.end.split('-')[0],sm=+s.start.split('-')[1],em=+s.end.split('-')[1];
-      let arr=[];for(let yy=sy;yy<=ey;yy++){if(yy!==y)continue;for(let mm=(yy===sy?sm:1);mm<=(yy===ey?em:12);mm++)arr.push(mm);}return arr;
-    });
+    const ms=stages.flatMap(s=>{const sy=+s.start.split('-')[0],ey=+s.end.split('-')[0],sm=+s.start.split('-')[1],em=+s.end.split('-')[1];let arr=[];for(let yy=sy;yy<=ey;yy++){if(yy!==y)continue;for(let mm=(yy===sy?sm:1);mm<=(yy===ey?em:12);mm++)arr.push(mm);}return arr;});
     if(ms.length)yGroups.push({year:y,months:[...new Set(ms)]});
   }
-
   function monthSVG(mNum,year){
     const dim=new Date(year,mNum,0).getDate(),fdow=getDow(year,mNum,1);
-    const rows=Math.ceil((dim+fdow)/7);
-    const CW=28,CH=22,HDR=20,DOW_H=16;
-    const W=CW*7,H=HDR+DOW_H+rows*CH;
+    const rows=Math.ceil((dim+fdow)/7),CW=28,CH=22,HDR=20,DOW_H=16,W=CW*7,H=HDR+DOW_H+rows*CH;
     const DLBLS=['L','M','X','J','V','S','D'];
     let s=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
     s+=`<rect width="${W}" height="${HDR}" fill="#1A1A1A"/>`;
@@ -603,147 +825,46 @@ function exportPDF(orientation){
     for(let d=1;d<=dim;d++){
       const p=dtStr(year,mNum,d),isR=isRestDayStr(p);
       const cs=stages.filter(st=>{if(st.restMode==='subtract'&&isR)return false;return p>=st.start&&p<=st.end;});
-      const dow=getDow(year,mNum,d),row=Math.floor((d-1+fdow)/7);
-      const x=dow*CW,y=HDR+DOW_H+row*CH;
-      if(isR){
-        s+=`<rect x="${x+1}" y="${y+1}" width="${CW-2}" height="${CH-2}" rx="3" fill="#D3D1C7"/>`;
-        s+=`<text x="${x+CW/2}" y="${y+CH-6}" text-anchor="middle" font-size="8" fill="#888" font-family="Arial,Helvetica,sans-serif">${d}</text>`;
-      } else if(cs.length===1){
-        s+=`<rect x="${x+1}" y="${y+1}" width="${CW-2}" height="${CH-2}" rx="3" fill="${cs[0].color}"/>`;
-        s+=`<text x="${x+CW/2}" y="${y+CH-6}" text-anchor="middle" font-size="8" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">${d}</text>`;
-      } else if(cs.length>1){
-        const hh=Math.floor((CH-2)/2);
-        s+=`<rect x="${x+1}" y="${y+1}" width="${CW-2}" height="${hh}" rx="3" fill="${cs[0].color}"/>`;
-        s+=`<rect x="${x+1}" y="${y+1+hh}" width="${CW-2}" height="${CH-2-hh}" fill="${cs[cs.length-1].color}"/>`;
-        s+=`<text x="${x+CW/2}" y="${y+CH-6}" text-anchor="middle" font-size="8" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">${d}</text>`;
-      } else {
-        s+=`<text x="${x+CW/2}" y="${y+CH-6}" text-anchor="middle" font-size="8" fill="${dow>=5?'#CCC':'#555'}" font-family="Arial,Helvetica,sans-serif">${d}</text>`;
-      }
+      const dow=getDow(year,mNum,d),row=Math.floor((d-1+fdow)/7),x=dow*CW,y=HDR+DOW_H+row*CH;
+      if(isR){s+=`<rect x="${x+1}" y="${y+1}" width="${CW-2}" height="${CH-2}" rx="3" fill="#D3D1C7"/>`;s+=`<text x="${x+CW/2}" y="${y+CH-6}" text-anchor="middle" font-size="8" fill="#888" font-family="Arial,Helvetica,sans-serif">${d}</text>`;}
+      else if(cs.length===1){s+=`<rect x="${x+1}" y="${y+1}" width="${CW-2}" height="${CH-2}" rx="3" fill="${cs[0].color}"/>`;s+=`<text x="${x+CW/2}" y="${y+CH-6}" text-anchor="middle" font-size="8" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">${d}</text>`;}
+      else if(cs.length>1){const hh=Math.floor((CH-2)/2);s+=`<rect x="${x+1}" y="${y+1}" width="${CW-2}" height="${hh}" rx="3" fill="${cs[0].color}"/>`;s+=`<rect x="${x+1}" y="${y+1+hh}" width="${CW-2}" height="${CH-2-hh}" fill="${cs[cs.length-1].color}"/>`;s+=`<text x="${x+CW/2}" y="${y+CH-6}" text-anchor="middle" font-size="8" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif">${d}</text>`;}
+      else{s+=`<text x="${x+CW/2}" y="${y+CH-6}" text-anchor="middle" font-size="8" fill="${dow>=5?'#CCC':'#555'}" font-family="Arial,Helvetica,sans-serif">${d}</text>`;}
     }
     return s+'</svg>';
   }
-
   let calRows='';
   yGroups.forEach((yg,yi)=>{
     const nextY=yi<yGroups.length-1?yGroups[yi+1].year:null;
-    calRows+=`<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px">
-      <span style="font-size:11px;font-weight:800;color:#1A1A1A;letter-spacing:0.08em">${yg.year}</span>
-      <div style="flex:1;height:1.5px;background:#1D9E75;opacity:0.3"></div>
-      ${nextY?`<span style="font-size:9px;color:#AAA">${nextY} →</span>`:''}
-    </div>`;
+    calRows+=`<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px"><span style="font-size:11px;font-weight:800;color:#1A1A1A;letter-spacing:0.08em">${yg.year}</span><div style="flex:1;height:1.5px;background:#1D9E75;opacity:0.3"></div>${nextY?`<span style="font-size:9px;color:#AAA">${nextY} →</span>`:''}</div>`;
     for(let i=0;i<yg.months.length;i+=cols){
       const row=yg.months.slice(i,i+cols);
       calRows+=`<div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-start">`;
-      row.forEach(m=>{
-        const svg=monthSVG(m,yg.year);
-        const b64=`data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
-        calRows+=`<div style="flex:1;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);border:1px solid #E8E6E0"><img src="${b64}" style="display:block;width:100%;height:auto"></div>`;
-      });
+      row.forEach(m=>{const b64=`data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(monthSVG(m,yg.year))))}`;calRows+=`<div style="flex:1;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);border:1px solid #E8E6E0"><img src="${b64}" style="display:block;width:100%;height:auto"></div>`;});
       for(let e=row.length;e<cols;e++)calRows+=`<div style="flex:1"></div>`;
       calRows+=`</div>`;
     }
   });
-
   const legItems=stages.map(s=>`<div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:3px;background:${s.color};flex-shrink:0"></div><span style="font-size:9px;color:#333;font-weight:700">${s.name}</span><span style="font-size:8px;color:#AAA;margin-left:2px">${calcDuration(s.start,s.end)}</span></div>`).join('');
   const restLeg=(restDow.size||restDays.size)?`<div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:3px;background:#D3D1C7;flex-shrink:0"></div><span style="font-size:9px;color:#333">Descanso</span></div>`:'';
-
-  const tRows=stages.map((s,idx)=>`<tr style="background:${idx%2===0?'#fff':'#F9F8F5'}">
-    <td style="padding:5px 10px;border-bottom:1px solid #EEE"><div style="display:flex;align-items:center;gap:5px"><div style="width:7px;height:7px;border-radius:50%;background:${s.color};flex-shrink:0"></div><strong style="font-size:9px;color:#222">${s.name}</strong></div></td>
-    <td style="padding:5px 10px;font-size:9px;color:#555;border-bottom:1px solid #EEE">${fmtDate(s.start)}</td>
-    <td style="padding:5px 10px;font-size:9px;color:#555;border-bottom:1px solid #EEE">${fmtDate(s.end)}</td>
-    <td style="padding:5px 10px;font-size:9px;color:#555;border-bottom:1px solid #EEE">${calcDuration(s.start,s.end)}</td>
-    <td style="padding:5px 10px;font-size:9px;color:#AAA;border-bottom:1px solid #EEE">${s.notes||'—'}</td>
-  </tr>`).join('');
-
-  // Logo HTML for PDF
-  const leHTML=logoEmpresaB64
-    ?`<img src="${logoEmpresaB64}" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">`
-    :`<div style="width:52px;height:52px;border:1.5px dashed #D3D1C7;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FAFAF8"><span style="font-size:8px;color:#CCC;text-align:center;line-height:1.5">Logo<br>empresa</span></div>`;
-  const lpHTML=logoProyectoB64
-    ?`<img src="${logoProyectoB64}" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">`
-    :`<div style="width:52px;height:52px;border:1.5px dashed #D3D1C7;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FAFAF8"><span style="font-size:8px;color:#CCC;text-align:center;line-height:1.5">Logo<br>proyecto</span></div>`;
-
-  const html=`<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8"><title>${pname} — Cronograma</title>
-<style>*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}@page{size:${isL?'letter landscape':'letter portrait'};margin:0}html,body{width:${PW}px;background:#fff}body{padding:${PAD}px;-webkit-print-color-adjust:exact;print-color-adjust:exact}</style>
-</head><body>
-<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;margin-bottom:16px;border-bottom:3px solid #1D9E75">
-  ${leHTML}
-  <div style="text-align:center;flex:1;padding:0 20px">
-    <div style="font-size:${isL?22:18}px;font-weight:800;color:#1A1A1A">${pname}</div>
-    ${subtitle?`<div style="font-size:10px;color:#999;margin-top:4px">${subtitle}</div>`:''}
-    <div style="font-size:8px;color:#CCC;margin-top:5px;text-transform:uppercase;letter-spacing:0.04em">Cronograma de producción · ${today}</div>
-  </div>
-  ${lpHTML}
-</div>
+  const tRows=stages.map((s,idx)=>`<tr style="background:${idx%2===0?'#fff':'#F9F8F5'}"><td style="padding:5px 10px;border-bottom:1px solid #EEE"><div style="display:flex;align-items:center;gap:5px"><div style="width:7px;height:7px;border-radius:50%;background:${s.color};flex-shrink:0"></div><strong style="font-size:9px;color:#222">${s.name}</strong></div></td><td style="padding:5px 10px;font-size:9px;color:#555;border-bottom:1px solid #EEE">${fmtDate(s.start)}</td><td style="padding:5px 10px;font-size:9px;color:#555;border-bottom:1px solid #EEE">${fmtDate(s.end)}</td><td style="padding:5px 10px;font-size:9px;color:#555;border-bottom:1px solid #EEE">${calcDuration(s.start,s.end)}</td><td style="padding:5px 10px;font-size:9px;color:#AAA;border-bottom:1px solid #EEE">${s.notes||'—'}</td></tr>`).join('');
+  const leHTML=logoEmpresaB64?`<img src="${logoEmpresaB64}" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">`:`<div style="width:52px;height:52px;border:1.5px dashed #D3D1C7;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FAFAF8"><span style="font-size:8px;color:#CCC;text-align:center;line-height:1.5">Logo<br>empresa</span></div>`;
+  const lpHTML=logoProyectoB64?`<img src="${logoProyectoB64}" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">`:`<div style="width:52px;height:52px;border:1.5px dashed #D3D1C7;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FAFAF8"><span style="font-size:8px;color:#CCC;text-align:center;line-height:1.5">Logo<br>proyecto</span></div>`;
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>${pname}</title><style>*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}@page{size:${isL?'letter landscape':'letter portrait'};margin:0}html,body{width:${PW}px;background:#fff}body{padding:${PAD}px;-webkit-print-color-adjust:exact;print-color-adjust:exact}</style></head><body>
+<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;margin-bottom:16px;border-bottom:3px solid #1D9E75">${leHTML}<div style="text-align:center;flex:1;padding:0 20px"><div style="font-size:${isL?22:18}px;font-weight:800;color:#1A1A1A">${pname}</div>${subtitle?`<div style="font-size:10px;color:#999;margin-top:4px">${subtitle}</div>`:''}<div style="font-size:8px;color:#CCC;margin-top:5px;text-transform:uppercase;letter-spacing:0.04em">Cronograma de producción · ${today}</div></div>${lpHTML}</div>
 <div style="display:flex;flex-wrap:wrap;gap:12px;padding:8px 12px;background:#F7F6F2;border-radius:8px;border:1px solid #ECEAE4;margin-bottom:4px">${legItems}${restLeg}</div>
 ${calRows}
 <div style="height:1px;background:#E8E6E0;margin:16px 0 12px"></div>
-<table style="width:100%;border-collapse:collapse;border:1px solid #EEE">
-  <thead><tr style="background:#1D9E75">
-    <th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Etapa</th>
-    <th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Inicio</th>
-    <th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Fin</th>
-    <th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Duración</th>
-    <th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Notas</th>
-  </tr></thead>
-  <tbody>${tRows}</tbody>
-</table>
-<div style="margin-top:20px;padding-top:10px;border-top:1px solid #EEE;display:flex;justify-content:space-between;align-items:center">
-  <span style="font-size:7.5px;color:#CCC;text-transform:uppercase;letter-spacing:0.04em">${pname} · Cronograma de producción</span>
-
-</div>
-<script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script>
-</body></html>`;
-
+<table style="width:100%;border-collapse:collapse;border:1px solid #EEE"><thead><tr style="background:#1D9E75"><th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Etapa</th><th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Inicio</th><th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Fin</th><th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Duración</th><th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Notas</th></tr></thead><tbody>${tRows}</tbody></table>
+<div style="margin-top:20px;padding-top:10px;border-top:1px solid #EEE"><span style="font-size:7.5px;color:#CCC;text-transform:uppercase;letter-spacing:0.04em">${pname} · Cronograma de producción</span></div>
+<script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script></body></html>`;
   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download=`${pname.replace(/\s+/g,'_')}_cronograma.html`;
   document.body.appendChild(a);a.click();
   setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
-
-  document.getElementById('modalContainer').innerHTML=`<div class="modal-overlay" onclick="closeModal(event)"><div class="modal" onclick="event.stopPropagation()">
-    <h4>✅ Archivo descargado</h4>
-    <p style="margin-bottom:10px">Para convertirlo a PDF:</p>
-    <div style="background:#f5f4f0;border-radius:10px;padding:12px;font-size:12px;display:flex;flex-direction:column;gap:8px;margin-bottom:1rem">
-      <div><strong>1.</strong> Abre el archivo <code style="background:#e8e6e0;padding:1px 5px;border-radius:4px">.html</code> descargado</div>
-      <div><strong>2.</strong> Se abrirá el diálogo de impresión automáticamente</div>
-      <div><strong>3.</strong> En <em>Destino</em>, selecciona <strong>"Guardar como PDF"</strong></div>
-    </div>
-    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModalDirect()">Entendido</button></div>
-  </div></div>`;
+  document.getElementById('modalContainer').innerHTML=`<div class="modal-overlay" onclick="closeModal(event)"><div class="modal" onclick="event.stopPropagation()"><h4>✅ Archivo descargado</h4><p style="margin-bottom:10px">Para convertirlo a PDF:</p><div style="background:#f5f4f0;border-radius:10px;padding:12px;font-size:12px;display:flex;flex-direction:column;gap:8px;margin-bottom:1rem"><div><strong>1.</strong> Abre el archivo <code style="background:#e8e6e0;padding:1px 5px;border-radius:4px">.html</code> descargado</div><div><strong>2.</strong> Se abrirá el diálogo de impresión automáticamente</div><div><strong>3.</strong> En <em>Destino</em>, selecciona <strong>"Guardar como PDF"</strong></div></div><div class="modal-actions"><button class="btn btn-primary" onclick="closeModalDirect()">Entendido</button></div></div></div>`;
 }
-
-// ── EXCEL EXPORT ───────────────────────────────────────────────────────────
-function exportExcel(){
-  if(typeof XLSX==='undefined'){alert('Cargando librería, intenta en un momento.');return;}
-  const pname=document.getElementById('projectName').value||'Proyecto';
-  const data=[['Proyecto:',pname],['Subtítulo:',document.getElementById('projectSubtitle').value||''],[''],['Etapa','Inicio','Fin','Duración','Color','Notas']];
-  for(let s of stages)data.push([s.name,s.start,s.end,calcDuration(s.start,s.end),s.color,s.notes]);
-  if(restDow.size)data.push([''],['Días recurrentes',[...restDow].map(i=>DOW_FULL[i]).join(', ')]);
-  if(restDays.size){data.push([''],['Días puntuales']);[...restDays.keys()].sort().forEach(d=>data.push([d,restDays.get(d)||'']));}
-  const allD=stages.flatMap(s=>[s.start,s.end]);
-  if(!allD.length){alert('Agrega etapas primero.');return;}
-  const minY=Math.min(...allD.map(d=>parseInt(d.split('-')[0]))),maxY=Math.max(...allD.map(d=>parseInt(d.split('-')[0])));
-  data.push([''],['']);
-  for(let y=minY;y<=maxY;y++){
-    const allM=stages.flatMap(s=>{const sy=parseInt(s.start.split('-')[0]),ey=parseInt(s.end.split('-')[0]),sm=parseInt(s.start.split('-')[1]),em=parseInt(s.end.split('-')[1]);let ms=[];for(let yy=sy;yy<=ey;yy++){if(yy!==y)continue;for(let mm=(yy===sy?sm:1);mm<=(yy===ey?em:12);mm++)ms.push(mm);}return ms;});
-    if(!allM.length)continue;
-    const minM=Math.min(...allM),maxM=Math.max(...allM);
-    data.push([`--- ${y} ---`]);
-    const hdr=[''];for(let m=minM;m<=maxM;m++){const days=new Date(y,m,0).getDate();for(let d=1;d<=days;d++)hdr.push(`${MES3[m-1]} ${d}`);}
-    data.push(hdr);
-    for(let s of stages){const row=[s.name];for(let m=minM;m<=maxM;m++){const days=new Date(y,m,0).getDate();for(let d=1;d<=days;d++){const dt=dtStr(y,m,d);row.push(isRestDay(y,m,d)?'REST':dt>=s.start&&dt<=s.end?'█':'');}}data.push(row);}
-    data.push(['']);
-  }
-  const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(data);
-  XLSX.utils.book_append_sheet(wb,ws,'Cronograma');
-  XLSX.writeFile(wb,`${pname.replace(/\s+/g,'_')}_cronograma.xlsx`);
-}
-
-// ── INIT ───────────────────────────────────────────────────────────────────
-renderDowGrid();initAllPickers();
 </script>
 </body>
 </html>
