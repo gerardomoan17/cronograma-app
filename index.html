@@ -641,11 +641,14 @@ function applyRestMode(mode,idx){
     if(mode==='ignore')s.restMode='none';
     else if(mode==='subtract')s.restMode='subtract';
     else if(mode==='skip'){
-      const totalDays=Math.round((new Date(s.end)-new Date(s.start))/864e5)+1;
-      const weeks=Math.round(totalDays/7);
-      let cur=new Date(s.start+'T00:00:00');
-      cur.setDate(cur.getDate()+weeks*7-1);
-      while(isRestDayStr(cur.toISOString().split('T')[0]))cur.setDate(cur.getDate()+1);
+      // Count working days in original range, then find new end that has same working days
+      const wd=calcWorkDays(s.start,s.end);
+      let count=0, cur=new Date(s.start+'T00:00:00');
+      while(count<wd){
+        const ds=cur.toISOString().split('T')[0];
+        if(!isRestDayStr(ds)) count++;
+        if(count<wd) cur.setDate(cur.getDate()+1);
+      }
       s.end=cur.toISOString().split('T')[0];
       s.restMode='skip';
     }
