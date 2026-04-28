@@ -640,7 +640,15 @@ function applyRestMode(mode,idx){
   idx.forEach(i=>{if(i<0||i>=stages.length)return;const s=stages[i];
     if(mode==='ignore')s.restMode='none';
     else if(mode==='subtract')s.restMode='subtract';
-    else if(mode==='skip'){const wd=calcWorkDays(s.start,s.end);s.end=extendEnd(s.start,Math.round(wd/6));s.restMode='skip';}
+    else if(mode==='skip'){
+      const totalDays=Math.round((new Date(s.end)-new Date(s.start))/864e5)+1;
+      const weeks=Math.round(totalDays/7);
+      let cur=new Date(s.start+'T00:00:00');
+      cur.setDate(cur.getDate()+weeks*7-1);
+      while(isRestDayStr(cur.toISOString().split('T')[0]))cur.setDate(cur.getDate()+1);
+      s.end=cur.toISOString().split('T')[0];
+      s.restMode='skip';
+    }
   });closeModalDirect();renderList();renderCalendar();triggerSave();
 }
 
