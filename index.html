@@ -780,7 +780,10 @@ function renderCalendar(){
     var allM=[];
     stages.forEach(function(s){
       var sy=parseInt(s.start.split('-')[0]),ey=parseInt(s.end.split('-')[0]),sm=parseInt(s.start.split('-')[1]),em=parseInt(s.end.split('-')[1]);
-      for(var yy=sy;yy<=ey;yy++){if(yy!==y)return;for(var mm=(yy===sy?sm:1);mm<=(yy===ey?em:12);mm++)allM.push(mm);}
+      for(var yy=sy;yy<=ey;yy++){
+        if(yy!==y) continue;
+        for(var mm=(yy===sy?sm:1);mm<=(yy===ey?em:12);mm++) allM.push(mm);
+      }
     });
     if(!allM.length)continue;
     var minM=Math.min.apply(null,allM),maxM=Math.max.apply(null,allM);
