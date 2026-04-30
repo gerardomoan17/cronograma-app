@@ -142,6 +142,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .orient-option:hover{border-color:#1D9E75;background:#fff}
 #save-indicator{font-size:11px;color:#1D9E75;opacity:0;transition:opacity 0.4s;margin-left:auto}
 </style>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -286,9 +289,136 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <script>
-var stages=[], restDays=new Map(), restDow=new Set([6]), inputMode='dates';
-var logoEmpresaB64='', logoProyectoB64='';
-var currentUser=null, currentProjectId=null, saveTimeout=null, demoMode=false;
+// ── FIREBASE ───────────────────────────────────────────────────────────────
+var firebaseConfig = {
+  apiKey: "AIzaSyCFU_hvuGjZDUDHSkaKLOjWR5SoPY2HBTI",
+  authDomain: "cronogramas-de-produccion.firebaseapp.com",
+  projectId: "cronogramas-de-produccion",
+  storageBucket: "cronogramas-de-produccion.firebasestorage.app",
+  messagingSenderId: "49269166836",
+  appId: "1:49269166836:web:bfdf32ec1887ffed8fc4a1"
+};
+firebase.initializeApp(firebaseConfig);
+var auth = firebase.auth();
+var db = firebase.firestore();
+var googleProvider = new firebase.auth.GoogleAuthProvider();
+
+var saveTimeout = null;
+
+auth.onAuthStateChanged(function(user){
+  currentUser = user;
+  if(user){
+    document.getElementById('screen-login').style.display='none';
+    document.getElementById('screen-projects').style.display='block';
+    document.getElementById('screen-app').style.display='none';
+    document.getElementById('user-name').textContent=user.displayName||'';
+    var photo=document.getElementById('user-photo');
+    if(photo){photo.src=user.photoURL||'';photo.style.display=user.photoURL?'block':'none';}
+    loadProjects();
+  } else {
+    document.getElementById('screen-login').style.display='flex';
+    document.getElementById('screen-projects').style.display='none';
+    document.getElementById('screen-app').style.display='none';
+  }
+});
+
+function doGoogleLogin(){
+  auth.signInWithPopup(googleProvider).catch(function(e){ alert('Error al iniciar sesión: '+e.message); });
+}
+function doLogout(){
+  if(unsubProject){unsubProject();unsubProject=null;}
+  auth.signOut();
+  stages=[];restDays=new Map();restDow=new Set([6]);logoEmpresaB64='';logoProyectoB64='';
+  currentProjectId=null;demoMode=false;
+}
+function doGoToProjects(){
+  if(unsubProject){unsubProject();unsubProject=null;}
+  stages=[];restDays=new Map();restDow=new Set([6]);logoEmpresaB64='';logoProyectoB64='';
+  currentProjectId=null;
+  document.getElementById('screen-app').style.display='none';
+  document.getElementById('screen-projects').style.display='block';
+  loadProjects();
+}
+
+var unsubProject=null;
+
+function loadProjects(){
+  var el=document.getElementById('projects-list');
+  el.innerHTML='<div style="color:#aaa;font-size:13px;padding:1rem 0">Cargando...</div>';
+  db.collection('proyectos').where('owner','==',currentUser.uid).orderBy('updatedAt','desc').get()
+  .then(function(snap){
+    if(snap.empty){el.innerHTML='<div style="color:#aaa;font-size:13px;padding:1rem 0">Sin proyectos todavía. Crea el primero.</div>';return;}
+    el.innerHTML=snap.docs.map(function(d){
+      var p=d.data();
+      return '<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:#fff;border:1px solid #e8e6e0;border-radius:12px;margin-bottom:8px">'
+        +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(p.nombre||'Sin nombre')+'</div>'
+        +'<div style="font-size:11px;color:#aaa;margin-top:2px">'+(p.subtitulo||'')+'</div></div>'
+        +'<button onclick="openProject(\''+d.id+'\')" style="padding:7px 16px;background:#1D9E75;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer">Abrir</button>'
+        +'<button onclick="confirmDeleteProject(\''+d.id+'\',\''+((p.nombre||'').replace(/'/g,"\\'"))+'\')" style="padding:7px 12px;background:#fff;color:#E24B4A;border:1px solid #E24B4A;border-radius:8px;font-size:13px;cursor:pointer">×</button>'
+        +'</div>';
+    }).join('');
+  }).catch(function(e){el.innerHTML='<div style="color:#E24B4A;font-size:13px">Error: '+e.message+'</div>';});
+}
+
+function openProject(id){
+  currentProjectId=id;
+  db.collection('proyectos').doc(id).get().then(function(doc){
+    if(!doc.exists)return;
+    var data=doc.data();
+    stages=data.stages||[];
+    restDow=new Set(data.restDow||[6]);
+    var rd=data.restDays||{};
+    restDays=new Map(Object.keys(rd).map(function(k){return[k,rd[k]];}));
+    logoEmpresaB64=data.logoEmpresa||'';
+    logoProyectoB64=data.logoProyecto||'';
+    document.getElementById('projectName').value=data.nombre||'';
+    document.getElementById('projectSubtitle').value=data.subtitulo||'';
+    if(logoEmpresaB64)document.getElementById('logo-empresa-preview').innerHTML='<img src="'+logoEmpresaB64+'" style="width:100%;height:100%;object-fit:contain;border-radius:9px">';
+    else document.getElementById('logo-empresa-preview').innerHTML='<span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>empresa</span>';
+    if(logoProyectoB64)document.getElementById('logo-proyecto-preview').innerHTML='<img src="'+logoProyectoB64+'" style="width:100%;height:100%;object-fit:contain;border-radius:9px">';
+    else document.getElementById('logo-proyecto-preview').innerHTML='<span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>proyecto</span>';
+    document.getElementById('screen-projects').style.display='none';
+    document.getElementById('screen-app').style.display='block';
+    renderDowGrid();renderList();renderCalendar();initAllPickers();switchTab('cronograma');
+  });
+}
+
+function doCreateProject(){
+  var nombre=document.getElementById('new-project-name').value.trim();
+  if(!nombre){alert('Escribe el nombre del proyecto.');return;}
+  var id=Date.now().toString();
+  db.collection('proyectos').doc(id).set({
+    owner:currentUser.uid,nombre:nombre,subtitulo:'',stages:[],
+    restDow:[6],restDays:{},logoEmpresa:'',logoProyecto:'',updatedAt:Date.now()
+  }).then(function(){ document.getElementById('new-project-name').value=''; document.getElementById('new-project-form').style.display='none'; openProject(id); });
+}
+
+function confirmDeleteProject(id,nombre){
+  if(confirm('¿Eliminar "'+nombre+'"? Esta acción no se puede deshacer.'))
+    db.collection('proyectos').doc(id).delete().then(loadProjects);
+}
+
+function scheduleSave(){
+  if(!currentProjectId||!currentUser)return;
+  clearTimeout(saveTimeout);
+  saveTimeout=setTimeout(function(){
+    var rdObj={};restDays.forEach(function(v,k){rdObj[k]=v;});
+    db.collection('proyectos').doc(currentProjectId).set({
+      owner:currentUser.uid,
+      nombre:document.getElementById('projectName').value||'',
+      subtitulo:document.getElementById('projectSubtitle').value||'',
+      stages:stages.map(function(s){return Object.assign({},s);}),
+      restDow:[...restDow],
+      restDays:rdObj,
+      logoEmpresa:logoEmpresaB64,
+      logoProyecto:logoProyectoB64,
+      updatedAt:Date.now()
+    },{merge:true}).then(function(){
+      var el=document.getElementById('save-indicator');
+      if(el){el.textContent='✓ Guardado';el.style.opacity='1';setTimeout(function(){el.style.opacity='0';},2000);}
+    });
+  },800);
+}
 var PALETTE=['#1D9E75','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16'];
 var MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 var MES3=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
