@@ -640,9 +640,10 @@ function addRestDay(){
   var cur=new Date(from+'T00:00:00'),end=new Date(to+'T00:00:00');
   while(cur<=end){restDays.set(cur.toISOString().split('T')[0],lbl);cur.setDate(cur.getDate()+1);}
   clearPickerVal('wrap-restFrom');clearPickerVal('wrap-restTo');renderPickerBtn('wrap-restFrom','Desde');renderPickerBtn('wrap-restTo','Hasta');
-  document.getElementById('restLabel').value='';renderRestTags();scheduleSave();
+  document.getElementById('restLabel').value='';renderRestTags();
   var af=stages.filter(function(s){return stageHasConflict(s.start,s.end);});
-  if(af.length)showRestConflictModal(af);else renderCalendar();
+  if(af.length)showRestConflictModal(af);
+  else{renderCalendar();scheduleSave();}
 }
 function removeRest(key){
   if(key.indexOf('|')>=0){var parts=key.split('|');var cur=new Date(parts[0]+'T00:00:00'),end=new Date(parts[1]+'T00:00:00');while(cur<=end){restDays.delete(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}}
@@ -656,7 +657,13 @@ function renderRestTags(){
   while(i<sorted.length){var j=i;var lbl=restDays.get(sorted[i]);while(j+1<sorted.length){var diff=(new Date(sorted[j+1]+'T00:00:00')-new Date(sorted[j]+'T00:00:00'))/864e5;if(diff===1&&restDays.get(sorted[j+1])===lbl)j++;else break;}groups.push({from:sorted[i],to:sorted[j],lbl:lbl});i=j+1;}
   el.innerHTML=groups.map(function(g){var key=g.from===g.to?g.from:(g.from+'|'+g.to),range=g.from===g.to?fmtDate(g.from):(fmtDate(g.from)+' → '+fmtDate(g.to));return '<div class="rest-tag"><span style="width:6px;height:6px;border-radius:50%;background:#B4B2A9;display:inline-block;flex-shrink:0"></span>'+range+(g.lbl?' — '+g.lbl:'')+'<span class="x" onclick="removeRest(\''+key+'\')">×</span></div>';}).join('');
 }
-function applyConfig(){renderCalendar();switchTab('cronograma');}
+function applyConfig(){
+  console.log('restDays size:', restDays.size);
+  console.log('restDow:', [...restDow]);
+  restDays.forEach(function(v,k){console.log('restDay:', k, v);});
+  renderCalendar();
+  switchTab('cronograma');
+}
 
 // ── REST CONFLICT ──────────────────────────────────────────────────────────
 function showRestConflictModal(aff){
