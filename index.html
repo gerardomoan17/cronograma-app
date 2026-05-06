@@ -191,7 +191,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="topbar">
     <div class="topbar-left" onclick="doGoToProjects()">← <span style="margin-left:4px">Mis proyectos</span></div>
     <span id="save-indicator"></span>
-    <button onclick="doLogout()" style="font-size:12px;color:#aaa;background:none;border:none;cursor:pointer;padding:4px 8px;margin-left:8px">Salir</button>
+    <button onclick="forceSave()" style="font-size:12px;background:#1D9E75;color:#fff;border:none;border-radius:8px;cursor:pointer;padding:5px 12px">Guardar</button>
+    <button onclick="doLogout()" style="font-size:12px;color:#aaa;background:none;border:none;cursor:pointer;padding:4px 8px;margin-left:4px">Salir</button>
   </div>
   <div class="header">
     <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
@@ -398,12 +399,34 @@ function confirmDeleteProject(id,nombre){
     db.collection('proyectos').doc(id).delete().then(loadProjects);
 }
 
-function scheduleSave(){
-  if(!currentProjectId||!currentUser)return;
+function forceSave(){
+  if(!currentProjectId){alert('Error: no hay proyecto activo. ID='+currentProjectId);return;}
+  if(!currentUser){alert('Error: no hay usuario. User='+currentUser);return;}
+  var rdObj={};restDays.forEach(function(v,k){rdObj[k]=v;});
+  var data={
+    owner:currentUser.uid,
+    nombre:document.getElementById('projectName').value||'',
+    subtitulo:document.getElementById('projectSubtitle').value||'',
+    stages:stages.map(function(s){return Object.assign({},s);}),
+    restDow:[...restDow],
+    restDays:rdObj,
+    logoEmpresa:logoEmpresaB64,
+    logoProyecto:logoProyectoB64,
+    updatedAt:Date.now()
+  };
+  db.collection('proyectos').doc(currentProjectId).set(data,{merge:true})
+  .then(function(){
+    alert('✓ Guardado correctamente');
+  })
+  .catch(function(e){
+    alert('Error al guardar: '+e.message);
+  });
+}
+  if(!currentProjectId||!currentUser){console.log('scheduleSave: no project or user');return;}
   clearTimeout(saveTimeout);
   saveTimeout=setTimeout(function(){
     var rdObj={};restDays.forEach(function(v,k){rdObj[k]=v;});
-    db.collection('proyectos').doc(currentProjectId).set({
+    var data={
       owner:currentUser.uid,
       nombre:document.getElementById('projectName').value||'',
       subtitulo:document.getElementById('projectSubtitle').value||'',
@@ -413,10 +436,13 @@ function scheduleSave(){
       logoEmpresa:logoEmpresaB64,
       logoProyecto:logoProyectoB64,
       updatedAt:Date.now()
-    },{merge:true}).then(function(){
+    };
+    db.collection('proyectos').doc(currentProjectId).set(data,{merge:true})
+    .then(function(){
       var el=document.getElementById('save-indicator');
       if(el){el.textContent='✓ Guardado';el.style.opacity='1';setTimeout(function(){el.style.opacity='0';},2000);}
-    });
+    })
+    .catch(function(e){console.error('Error guardando:',e);alert('Error al guardar: '+e.message);});
   },800);
 }
 var PALETTE=['#1D9E75','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16'];
@@ -690,7 +716,6 @@ function addRestDay(){
   if(af.length)showRestConflictModal(af);
   else renderCalendar();
 }
-function removeRest(key){
   if(key.indexOf('|')>=0){var parts=key.split('|'),f=parts[0],t=parts[1];var cur=new Date(f+'T00:00:00'),end=new Date(t+'T00:00:00');while(cur<=end){restDays.delete(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}}else restDays.delete(key);
   renderRestTags();stages.forEach(function(s){s.restMode=null;});renderCalendar();scheduleSave();
 }
