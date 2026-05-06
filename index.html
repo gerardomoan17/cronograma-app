@@ -678,21 +678,21 @@ function setMode(m){inputMode=m;document.getElementById('mode-dates').style.disp
 function updateWeeksPreview(){var s=getPickerVal('wrap-stageStartW'),w=parseInt(document.getElementById('stageWeeks').value)||0,el=document.getElementById('weeksPreview');if(s&&w>0)el.textContent='Fin estimado: '+fmtDate(extendEnd(s,w));else el.textContent='';}
 function switchTab(t){document.getElementById('tab-cronograma').style.display=t==='cronograma'?'block':'none';document.getElementById('tab-config').style.display=t==='config'?'block':'none';document.querySelectorAll('.tab').forEach(function(el,i){el.classList.toggle('active',(i===0&&t==='cronograma')||(i===1&&t==='config'));});if(t==='config'){renderDowGrid();renderList();renderRestTags();initAllPickers();}}
 function renderDowGrid(){document.getElementById('dowGrid').innerHTML=DOW_LABELS.map(function(lbl,i){return '<button class="dow-btn'+(restDow.has(i)?' active':'')+'" onclick="toggleDow('+i+')">'+lbl+'<br><span style="font-size:9px;font-weight:400;opacity:0.7">'+DOW_FULL[i].slice(0,3)+'</span></button>';}).join('');}
-function toggleDow(i){restDow.has(i)?restDow.delete(i):restDow.add(i);renderDowGrid();}
+function toggleDow(i){restDow.has(i)?restDow.delete(i):restDow.add(i);renderDowGrid();scheduleSave();}
 function addRestDay(){
   var from=getPickerVal('wrap-restFrom'),to=getPickerVal('wrap-restTo')||from,lbl=document.getElementById('restLabel').value.trim();
   if(!from)return;if(to<from){alert('La fecha "Hasta" debe ser igual o posterior.');return;}
   var cur=new Date(from+'T00:00:00'),end=new Date(to+'T00:00:00');
   while(cur<=end){restDays.set(cur.toISOString().split('T')[0],lbl);cur.setDate(cur.getDate()+1);}
   clearPickerVal('wrap-restFrom');clearPickerVal('wrap-restTo');renderPickerBtn('wrap-restFrom','Desde');renderPickerBtn('wrap-restTo','Hasta');
-  document.getElementById('restLabel').value='';renderRestTags();
+  document.getElementById('restLabel').value='';renderRestTags();scheduleSave();
   var af=stages.filter(function(s){return stageHasConflict(s.start,s.end);});
   if(af.length)showRestConflictModal(af);
   else renderCalendar();
 }
 function removeRest(key){
   if(key.indexOf('|')>=0){var parts=key.split('|'),f=parts[0],t=parts[1];var cur=new Date(f+'T00:00:00'),end=new Date(t+'T00:00:00');while(cur<=end){restDays.delete(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}}else restDays.delete(key);
-  renderRestTags();stages.forEach(function(s){s.restMode=null;});renderCalendar();
+  renderRestTags();stages.forEach(function(s){s.restMode=null;});renderCalendar();scheduleSave();
 }
 function renderRestTags(){
   var el=document.getElementById('restTags'),sorted=[...restDays.keys()].sort();
@@ -721,7 +721,7 @@ function applyRestMode(mode,idx){
       s.restMode='skip';
     }
   });
-  closeModalDirect();renderList();renderCalendar();
+  closeModalDirect();renderList();renderCalendar();scheduleSave();
 }
 
 // ── STAGES ─────────────────────────────────────────────────────────────────
@@ -757,7 +757,7 @@ function addStage(){
   document.getElementById('stageTipo').value='other';
   clearPickerVal('wrap-stageStart');clearPickerVal('wrap-stageEnd');clearPickerVal('wrap-stageStartW');
   document.getElementById('stageWeeks').value='4';document.getElementById('weeksPreview').textContent='';
-  showAddMsg('');renderList();renderCalendar();initAllPickers();
+  showAddMsg('');renderList();renderCalendar();initAllPickers();scheduleSave();
   if(stageHasConflict(s,e))showRestConflictModal([ns]);
 }
 
@@ -868,10 +868,10 @@ function requestConfirmEdit(i){
   else{s=getPickerVal('me-wrap-start');e=getPickerVal('me-wrap-end');}
   if(!n||!s||!e){alert('Completa los campos.');return;}if(s>e){alert('El inicio debe ser antes del fin.');return;}
   stages[i]=Object.assign({},stages[i],{name:n,tipo:tipo,start:s,end:e,color:c,notes:t,restMode:null});
-  closeModalDirect();renderList();renderCalendar();if(stageHasConflict(s,e))showRestConflictModal([stages[i]]);
+  closeModalDirect();renderList();renderCalendar();scheduleSave();if(stageHasConflict(s,e))showRestConflictModal([stages[i]]);
 }
 function confirmDelete(i){document.getElementById('modalContainer').innerHTML='<div class="modal-overlay"><div class="modal" onclick="event.stopPropagation()"><h4>¿Eliminar etapa?</h4><p class="modal-confirm-msg">Estás por eliminar <strong>'+stages[i].name+'</strong>.</p><div class="modal-actions"><button class="btn" onclick="closeModalDirect()">Cancelar</button><button class="btn" style="background:#E24B4A;color:#fff;border-color:#E24B4A" onclick="doDelete('+i+')">Eliminar</button></div></div></div>';}
-function doDelete(i){stages.splice(i,1);closeModalDirect();renderList();renderCalendar();}
+function doDelete(i){stages.splice(i,1);closeModalDirect();renderList();renderCalendar();scheduleSave();}
 function closeModal(e){if(e.target.classList.contains('modal-overlay'))closeModalDirect();}
 function closeModalDirect(){document.getElementById('modalContainer').innerHTML='';closePicker();}
 
