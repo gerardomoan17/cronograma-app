@@ -210,6 +210,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <button class="btn btn-primary" onclick="renderCalendar()">Actualizar</button>
   </div>
+  <!-- VERSION TABS -->
+  <div id="version-tabs-wrap" style="display:flex;align-items:center;gap:6px;margin-bottom:1rem;flex-wrap:wrap">
+    <div id="version-tabs" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"></div>
+    <button onclick="showNewVersionModal()" style="padding:5px 12px;background:#fff;border:1px dashed #d3d1c7;border-radius:8px;font-size:12px;color:#888;cursor:pointer;white-space:nowrap">+ Nueva versión</button>
+  </div>
+
   <div class="tabs">
     <button class="tab active" onclick="switchTab('cronograma')">Cronograma</button>
     <button class="tab" onclick="switchTab('config')">Configuración</button>
@@ -304,6 +310,7 @@ var gProvider = new firebase.auth.GoogleAuthProvider();
 var stages=[], restDays=new Map(), restDow=new Set([6]), inputMode='dates';
 var logoEmpresaB64='', logoProyectoB64='';
 var currentUser=null, currentProjectId=null, saveTimeout=null;
+var versions=[], currentVersionId=null;
 var PALETTE=['#1D9E75','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16'];
 var MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 var MES3=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -429,16 +436,15 @@ function deleteProject(id,nombre){
 // ── SAVE ───────────────────────────────────────────────────────────────────
 function doSave(cb){
   if(!currentProjectId||!currentUser)return;
-  var rdObj={};restDays.forEach(function(v,k){rdObj[k]=v;});
+  // Save current version data first
+  var cur=versions.find(function(v){return v.id===currentVersionId;});
+  if(cur) cur.data=currentVersionData();
   db.collection('proyectos').doc(currentProjectId).set({
     owner:currentUser.uid,
     nombre:document.getElementById('projectName').value||'',
     subtitulo:document.getElementById('projectSubtitle').value||'',
-    stages:stages.map(function(s){return Object.assign({},s);}),
-    restDow:[...restDow],
-    restDays:rdObj,
-    logoEmpresa:logoEmpresaB64,
-    logoProyecto:logoProyectoB64,
+    versions:versions,
+    currentVersionId:currentVersionId,
     updatedAt:Date.now()
   },{merge:true}).then(function(){if(cb)cb();}).catch(function(e){alert('Error al guardar: '+e.message);});
 }
@@ -469,7 +475,108 @@ function loadLogo(which,input){
   reader.readAsDataURL(file);
 }
 
-// ── WEEK NUMBER ENGINE ─────────────────────────────────────────────────────
+// ── VERSIONS ───────────────────────────────────────────────────────────────
+function makeVersionId(){ return 'v'+Date.now(); }
+
+function currentVersionData(){
+  var rdObj={};restDays.forEach(function(v,k){rdObj[k]=v;});
+  return {
+    stages:stages.map(function(s){return Object.assign({},s);}),
+    restDow:[...restDow],
+    restDays:rdObj,
+    logoEmpresa:logoEmpresaB64,
+    logoProyecto:logoProyectoB64,
+    nombre:document.getElementById('projectName').value||'',
+    subtitulo:document.getElementById('projectSubtitle').value||''
+  };
+}
+
+function loadVersionData(data){
+  stages=data.stages||[];
+  restDow=new Set(data.restDow||[6]);
+  var rd=data.restDays||{};
+  restDays=new Map(Object.keys(rd).map(function(k){return[k,rd[k]];}));
+  logoEmpresaB64=data.logoEmpresa||'';
+  logoProyectoB64=data.logoProyecto||'';
+  document.getElementById('projectName').value=data.nombre||'';
+  document.getElementById('projectSubtitle').value=data.subtitulo||'';
+  var lep=document.getElementById('logo-empresa-preview');
+  var lpp=document.getElementById('logo-proyecto-preview');
+  lep.innerHTML=logoEmpresaB64?'<img src="'+logoEmpresaB64+'" style="width:100%;height:100%;object-fit:contain;border-radius:9px">':'<span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>empresa</span>';
+  lpp.innerHTML=logoProyectoB64?'<img src="'+logoProyectoB64+'" style="width:100%;height:100%;object-fit:contain;border-radius:9px">':'<span style="font-size:8px;color:#bbb;text-align:center;line-height:1.5">Logo<br>proyecto</span>';
+}
+
+function renderVersionTabs(){
+  var el=document.getElementById('version-tabs');
+  el.innerHTML=versions.map(function(v){
+    var isActive=v.id===currentVersionId;
+    return '<div style="display:flex;align-items:center;gap:2px;background:'+(isActive?'#1D9E75':'#fff')+';border:1px solid '+(isActive?'#1D9E75':'#d3d1c7')+';border-radius:8px;padding:4px 6px 4px 10px">'
+      +'<input id="vtab-'+v.id+'" value="'+v.name+'" onclick="switchVersion(\''+v.id+'\')" onblur="renameVersion(\''+v.id+'\',this.value)" onkeydown="if(event.key===\'Enter\')this.blur()" style="background:transparent;border:none;outline:none;font-size:12px;font-weight:600;color:'+(isActive?'#fff':'#555')+';width:'+(Math.max(40,v.name.length*8))+'px;cursor:'+(isActive?'text':'pointer')+'">'
+      +(versions.length>1?'<button onclick="confirmDeleteVersion(\''+v.id+'\')" style="background:none;border:none;cursor:pointer;font-size:14px;color:'+(isActive?'rgba(255,255,255,0.7)':'#bbb')+';padding:0 2px;line-height:1">×</button>':'')
+      +'</div>';
+  }).join('');
+}
+
+function switchVersion(id){
+  if(id===currentVersionId)return;
+  // Save current version data
+  var cur=versions.find(function(v){return v.id===currentVersionId;});
+  if(cur) cur.data=currentVersionData();
+  // Load new version
+  currentVersionId=id;
+  var nv=versions.find(function(v){return v.id===id;});
+  if(nv){loadVersionData(nv.data);}
+  resetPickers();renderDowGrid();renderList();renderCalendar();initAllPickers();renderVersionTabs();scheduleSave();
+}
+
+function renameVersion(id,name){
+  var v=versions.find(function(v){return v.id===id;});
+  if(v&&name.trim()){v.name=name.trim();renderVersionTabs();scheduleSave();}
+}
+
+function showNewVersionModal(){
+  document.getElementById('modalContainer').innerHTML='<div class="modal-overlay" onclick="closeModal(event)"><div class="modal" onclick="event.stopPropagation()">'
+    +'<h4>Nueva versión</h4><p>¿Cómo quieres crear la nueva versión?</p>'
+    +'<div style="display:flex;gap:10px;margin:1rem 0">'
+    +'<button onclick="createVersion(false)" class="orient-option"><span style="font-size:24px">🗒️</span><span style="font-size:13px;font-weight:600;color:#222">En blanco</span><span style="font-size:11px;color:#aaa">Versión vacía</span></button>'
+    +'<button onclick="createVersion(true)" class="orient-option"><span style="font-size:24px">📋</span><span style="font-size:13px;font-weight:600;color:#222">Duplicar</span><span style="font-size:11px;color:#aaa">Copia de la versión actual</span></button>'
+    +'</div>'
+    +'<div style="display:flex;justify-content:flex-end"><button class="btn" onclick="closeModalDirect()">Cancelar</button></div>'
+    +'</div></div>';
+}
+
+function createVersion(duplicate){
+  closeModalDirect();
+  // Save current first
+  var cur=versions.find(function(v){return v.id===currentVersionId;});
+  if(cur) cur.data=currentVersionData();
+  var newId=makeVersionId();
+  var newName='V'+(versions.length+1);
+  var newData=duplicate?JSON.parse(JSON.stringify(currentVersionData())):{
+    stages:[],restDow:[6],restDays:{},logoEmpresa:'',logoProyecto:'',nombre:document.getElementById('projectName').value||'',subtitulo:''
+  };
+  versions.push({id:newId,name:newName,data:newData});
+  currentVersionId=newId;
+  loadVersionData(newData);
+  resetPickers();renderDowGrid();renderList();renderCalendar();initAllPickers();renderVersionTabs();scheduleSave();
+}
+
+function confirmDeleteVersion(id){
+  if(versions.length<=1)return;
+  var v=versions.find(function(v){return v.id===id;});
+  document.getElementById('modalContainer').innerHTML='<div class="modal-overlay"><div class="modal" onclick="event.stopPropagation()"><h4>¿Eliminar versión?</h4><p class="modal-confirm-msg">Estás por eliminar <strong>'+(v?v.name:'esta versión')+'</strong>. Esta acción no se puede deshacer.</p><div class="modal-actions"><button class="btn" onclick="closeModalDirect()">Cancelar</button><button class="btn" style="background:#E24B4A;color:#fff;border-color:#E24B4A" onclick="deleteVersion(\''+id+'\')">Eliminar</button></div></div></div>';
+}
+
+function deleteVersion(id){
+  var idx=versions.findIndex(function(v){return v.id===id;});
+  versions.splice(idx,1);
+  if(currentVersionId===id){
+    currentVersionId=versions[Math.max(0,idx-1)].id;
+    loadVersionData(versions[Math.max(0,idx-1)].data);
+    resetPickers();renderDowGrid();renderList();renderCalendar();initAllPickers();
+  }
+  renderVersionTabs();closeModalDirect();scheduleSave();
+}
 function buildWeekMap(){
   var map={};
   var shootStage=null;
