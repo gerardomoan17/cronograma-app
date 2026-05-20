@@ -18,7 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .btn-google:hover{background:#f5f4f0}
 .btn-google svg{width:20px;height:20px;flex-shrink:0}
 .app{max-width:960px;margin:0 auto;padding:1.5rem 1rem}
-.topbar{display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid #e8e6e0}
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid #e8e6e0;flex-wrap:wrap}
 .topbar-left{display:flex;align-items:center;gap:8px;cursor:pointer;color:#888;font-size:13px}
 .topbar-left:hover{color:#222}
 .header{display:flex;align-items:flex-start;gap:12px;margin-bottom:1.25rem;flex-wrap:wrap}
@@ -148,6 +148,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .vtab.active input{color:#fff;cursor:text}
 .vtab .vx{background:none;border:none;cursor:pointer;font-size:14px;color:#bbb;padding:0 2px;line-height:1}
 .vtab.active .vx{color:rgba(255,255,255,0.7)}
+/* ── LANG TOGGLE ─────────────────────────────────────────────────────────── */
+.lang-toggle{display:flex;border:1px solid #e0ddd8;border-radius:8px;overflow:hidden;flex-shrink:0}
+.lang-btn{padding:5px 12px;font-size:11px;font-weight:700;border:none;background:#faf9f7;color:#999;cursor:pointer;letter-spacing:0.04em;transition:background 0.15s,color 0.15s}
+.lang-btn.active{background:#1D9E75;color:#fff}
+.lang-btn:not(.active):hover{background:#f0ede8;color:#555}
 </style>
 </head>
 <body>
@@ -195,6 +200,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="btn-back-projects" class="topbar-left">← <span style="margin-left:4px">Mis proyectos</span></div>
     <span id="save-indicator"></span>
     <button id="btn-save" style="font-size:12px;background:#1D9E75;color:#fff;border:none;border-radius:8px;cursor:pointer;padding:5px 12px;margin-left:8px">Guardar</button>
+    <!-- ── LANGUAGE TOGGLE ─────────────────────────────────────────── -->
+    <div class="lang-toggle" style="margin-left:4px">
+      <button id="lang-es" class="lang-btn active" onclick="setLang('es')">ES</button>
+      <button id="lang-en" class="lang-btn" onclick="setLang('en')">EN</button>
+    </div>
     <button id="btn-logout-app" style="font-size:12px;color:#aaa;background:none;border:none;cursor:pointer;padding:4px 8px;margin-left:4px">Salir</button>
   </div>
 
@@ -343,15 +353,66 @@ var logoEmpresaB64='', logoProyectoB64='';
 var currentUser=null, currentProjectId=null, saveTimeout=null;
 var versions=[], currentVersionId=null;
 var PALETTE=['#1D9E75','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16'];
-var MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-var MES3=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-var DOW_LABELS=['L','M','X','J','V','S','D'];
-var DOW_FULL=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
-var TIPO_LABELS={'prep':'Prep','shoot':'Rodaje','wrap':'Wrap','post':'Post','other':''};
+
+// ── I18N ───────────────────────────────────────────────────────────────────
+var lang='es';
+var I18N={
+  es:{
+    months:['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'],
+    months3:['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'],
+    dowLabels:['L','M','X','J','V','S','D'],
+    dowFull:['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'],
+    rest:'Descanso',
+    schedule:'Cronograma de producción',
+    stage:'Etapa',type:'Tipo',start:'Inicio',end:'Fin',duration:'Duración',notes:'Notas',
+    tipoLabels:{prep:'Prep',shoot:'Rodaje',wrap:'Wrap',post:'Post',other:''},
+    weeksStr:function(n){return n+' semana'+(n===1?'':'s');},
+    daysStr:function(n){return n+' día'+(n===1?'':'s');},
+    locale:'es-MX'
+  },
+  en:{
+    months:['January','February','March','April','May','June','July','August','September','October','November','December'],
+    months3:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+    dowLabels:['M','T','W','T','F','S','S'],
+    dowFull:['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'],
+    rest:'Off',
+    schedule:'Production Schedule',
+    stage:'Stage',type:'Type',start:'Start',end:'End',duration:'Duration',notes:'Notes',
+    tipoLabels:{prep:'Prep',shoot:'Shoot',wrap:'Wrap',post:'Post',other:''},
+    weeksStr:function(n){return n+' week'+(n===1?'':'s');},
+    daysStr:function(n){return n+' day'+(n===1?'':'s');},
+    locale:'en-US'
+  }
+};
+function t(){return I18N[lang];}
+
+var MES=t().months, MES3=t().months3, DOW_LABELS=t().dowLabels, DOW_FULL=t().dowFull;
+var TIPO_LABELS=t().tipoLabels;
 var TIPO_COLORS={'prep':'#6B7280','shoot':'#1D9E75','wrap':'#8B5CF6','post':'#EC4899','other':'#9CA3AF'};
+
+function setLang(l){
+  if(!I18N[l])return;
+  lang=l;
+  // update toggle buttons
+  document.getElementById('lang-es').classList.toggle('active',l==='es');
+  document.getElementById('lang-en').classList.toggle('active',l==='en');
+  // update live variables
+  MES=t().months; MES3=t().months3; DOW_LABELS=t().dowLabels; DOW_FULL=t().dowFull;
+  TIPO_LABELS=t().tipoLabels;
+  // persist in localStorage
+  try{localStorage.setItem('cronograma_lang',l);}catch(e){}
+  // re-render everything that has text
+  renderDowGrid();
+  renderList();
+  renderCalendar();
+  renderVersionTabs();
+}
 
 // ── INIT ───────────────────────────────────────────────────────────────────
 window.addEventListener('load', function(){
+  // restore saved language
+  try{var sl=localStorage.getItem('cronograma_lang');if(sl&&I18N[sl]){lang=sl;MES=t().months;MES3=t().months3;DOW_LABELS=t().dowLabels;DOW_FULL=t().dowFull;TIPO_LABELS=t().tipoLabels;document.getElementById('lang-es').classList.toggle('active',sl==='es');document.getElementById('lang-en').classList.toggle('active',sl==='en');}}catch(e){}
+
   document.getElementById('btn-google-login').addEventListener('click', function(){
     auth.signInWithPopup(gProvider).catch(function(e){alert('Error: '+e.message);});
   });
@@ -656,7 +717,11 @@ function isRestDayStr(dtS){if(restDays.has(dtS))return true;var p=dtS.split('-')
 function isRestDay(y,m,d){return isRestDayStr(dtStr(y,m,d));}
 function countRestInRange(s,e){var c=0,cur=new Date(s+'T00:00:00'),en=new Date(e+'T00:00:00');while(cur<=en){if(isRestDayStr(cur.toISOString().split('T')[0]))c++;cur.setDate(cur.getDate()+1);}return c;}
 function extendEnd(start,weeks){var d=new Date(start+'T00:00:00');d.setDate(d.getDate()+weeks*7-1);while(getDow(d.getFullYear(),d.getMonth()+1,d.getDate())===6)d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];}
-function calcDuration(s,e){var td=Math.round((new Date(e)-new Date(s))/864e5)+1,tw=Math.round(td/7);return tw>=2?(tw+' semanas'):(td+' días');}
+// ── calcDuration: uses I18N ────────────────────────────────────────────────
+function calcDuration(s,e){
+  var td=Math.round((new Date(e)-new Date(s))/864e5)+1,tw=Math.round(td/7);
+  return tw>=2?t().weeksStr(tw):t().daysStr(td);
+}
 function stageHasConflict(s,e){return countRestInRange(s,e)>0;}
 function getStagesForDay(y,m,d){var dt=dtStr(y,m,d);return stages.filter(function(st){if(st.restMode==='subtract'&&isRestDayStr(dt))return false;return dt>=st.start&&dt<=st.end;});}
 function showAddMsg(msg){var el=document.getElementById('addMsg');if(el){el.textContent=msg;if(msg)setTimeout(function(){el.textContent='';},3000);}}
@@ -926,7 +991,8 @@ function renderCalendar(){
   var html='<div style="margin-bottom:14px"><span style="font-size:16px;font-weight:600;color:#222">'+pname+'</span>'+(sub?'<span style="font-size:12px;color:#888;margin-left:10px">'+sub+'</span>':'')+'</div>';
   html+='<div class="legend">';
   stages.forEach(function(s){html+='<div class="legend-item"><div class="legend-dot" style="background:'+s.color+'"></div><span style="font-weight:600;color:#222">'+s.name+'</span><span style="color:#aaa;margin-left:4px">'+calcDuration(s.start,s.end)+'</span></div>';});
-  html+='<div class="legend-item"><div class="legend-dot" style="background:#B4B2A9"></div><span>Descanso</span></div></div>';
+  // ── "Descanso" / "Off" via I18N ────────────────────────────────────────
+  html+='<div class="legend-item"><div class="legend-dot" style="background:#B4B2A9"></div><span>'+t().rest+'</span></div></div>';
   for(var y=minY;y<=maxY;y++){
     var allM=[];
     stages.forEach(function(s){
@@ -967,7 +1033,10 @@ function renderCalendar(){
     }
     html+='</div>';
   }
-  html+='<div style="margin-top:1.5rem;border-top:1px solid #e8e6e0;padding-top:1rem"><table class="summary-table"><thead><tr><th>Etapa</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Duración</th><th>Notas</th></tr></thead><tbody>';
+  // ── Summary table with I18N headers ──────────────────────────────────────
+  html+='<div style="margin-top:1.5rem;border-top:1px solid #e8e6e0;padding-top:1rem"><table class="summary-table"><thead><tr>'
+    +'<th>'+t().stage+'</th><th>'+t().type+'</th><th>'+t().start+'</th><th>'+t().end+'</th><th>'+t().duration+'</th><th>'+t().notes+'</th>'
+    +'</tr></thead><tbody>';
   stages.forEach(function(s){
     html+='<tr><td><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:'+s.color+';display:inline-block"></span>'+s.name+'</span></td>'
       +'<td style="color:#888">'+(TIPO_LABELS[s.tipo||'other']||'—')+'</td>'
@@ -1022,7 +1091,7 @@ function saveEditModal(i){
   var n=(document.getElementById('me-name').value||'').trim();
   var tipo=document.getElementById('me-tipo').value||'other';
   var c=document.getElementById('me-color').value||'#1D9E75';
-  var t=(document.getElementById('me-notes').value||'').trim();
+  var t2=(document.getElementById('me-notes').value||'').trim();
   var isW=document.getElementById('me-mode-weeks').style.display!=='none',s='',e='';
   if(isW){
     s=getPickerVal('me-wrap-startW');
@@ -1034,7 +1103,7 @@ function saveEditModal(i){
   }
   if(!n||!s||!e){alert('Completa los campos.');return;}
   if(s>e){alert('El inicio debe ser antes del fin.');return;}
-  stages[i]=Object.assign({},stages[i],{name:n,tipo:tipo,start:s,end:e,color:c,notes:t,restMode:null});
+  stages[i]=Object.assign({},stages[i],{name:n,tipo:tipo,start:s,end:e,color:c,notes:t2,restMode:null});
   closeModalDirect();renderList();renderCalendar();scheduleSave();
   if(stageHasConflict(s,e))showRestConflictModal([stages[i]]);
 }
@@ -1056,7 +1125,8 @@ function exportPDF(orientation){
   var PW=isL?1056:816, PAD=48, cols=isL?4:3;
   var pname=document.getElementById('projectName').value||'Proyecto';
   var subtitle=document.getElementById('projectSubtitle').value||'';
-  var today=new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
+  // ── date formatted in the current language locale ──────────────────────
+  var today=new Date().toLocaleDateString(t().locale,{year:'numeric',month:'long',day:'numeric'});
   var weekMap=buildWeekMap();
   var allD=stages.reduce(function(a,s){return a.concat([s.start,s.end]);},[]);
   var minY=Math.min.apply(null,allD.map(function(d){return parseInt(d.split('-')[0]);}));
@@ -1078,7 +1148,8 @@ function exportPDF(orientation){
     sv+='<rect width="'+W+'" height="'+HDR+'" fill="#1A1A1A"/>';
     sv+='<text x="'+W/2+'" y="'+(HDR-5)+'" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif" letter-spacing="1">'+MES[mNum-1].toUpperCase()+'</text>';
     sv+='<rect x="0" y="'+HDR+'" width="'+WN+'" height="'+DOW_H+'" fill="#F5F4F0"/>';
-    ['L','M','X','J','V','S','D'].forEach(function(d,i){sv+='<text x="'+(WN+i*CW+CW/2)+'" y="'+(HDR+DOW_H-4)+'" text-anchor="middle" font-size="7.5" fill="#AAA" font-family="Arial,Helvetica,sans-serif" font-weight="600">'+d+'</text>';});
+    // ── use DOW_LABELS (respects current lang) ────────────────────────────
+    DOW_LABELS.forEach(function(d,i){sv+='<text x="'+(WN+i*CW+CW/2)+'" y="'+(HDR+DOW_H-4)+'" text-anchor="middle" font-size="7.5" fill="#AAA" font-family="Arial,Helvetica,sans-serif" font-weight="600">'+d+'</text>';});
     for(var row=0;row<rows;row++){
       var yOff=HDR+DOW_H+row*CH,fd=row*7-fdow+1,monDate=null;
       for(var dd=fd;dd<fd+7;dd++){if(dd>=1&&dd<=dim){monDate=getMondayStr(year,mNum,dd);break;}}
@@ -1112,7 +1183,9 @@ function exportPDF(orientation){
     }
   });
   var legItems=stages.map(function(s){return '<div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:3px;background:'+s.color+';flex-shrink:0"></div><span style="font-size:9px;color:#333;font-weight:700">'+s.name+'</span><span style="font-size:8px;color:#AAA;margin-left:2px">'+calcDuration(s.start,s.end)+'</span></div>';}).join('');
-  var restLeg=(restDow.size||restDays.size)?'<div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:3px;background:#D3D1C7;flex-shrink:0"></div><span style="font-size:9px;color:#333">Descanso</span></div>':'';
+  // ── "Off"/"Descanso" in PDF legend via I18N ───────────────────────────
+  var restLeg=(restDow.size||restDays.size)?'<div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:3px;background:#D3D1C7;flex-shrink:0"></div><span style="font-size:9px;color:#333">'+t().rest+'</span></div>':'';
+  // ── PDF table rows using translated tipo labels ────────────────────────
   var tRows=stages.map(function(s,idx){
     return '<tr style="background:'+(idx%2===0?'#fff':'#F9F8F5')+'">'
       +'<td style="padding:5px 10px;border-bottom:1px solid #EEE"><div style="display:flex;align-items:center;gap:5px"><div style="width:7px;height:7px;border-radius:50%;background:'+s.color+';flex-shrink:0"></div><strong style="font-size:9px;color:#222">'+s.name+'</strong></div></td>'
@@ -1124,28 +1197,30 @@ function exportPDF(orientation){
   }).join('');
   var leHTML=logoEmpresaB64?'<img src="'+logoEmpresaB64+'" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">':'<div style="width:52px;height:52px;border:1.5px dashed #D3D1C7;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FAFAF8"><span style="font-size:8px;color:#CCC;text-align:center;line-height:1.5">Logo<br>empresa</span></div>';
   var lpHTML=logoProyectoB64?'<img src="'+logoProyectoB64+'" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">':'<div style="width:52px;height:52px;border:1.5px dashed #D3D1C7;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FAFAF8"><span style="font-size:8px;color:#CCC;text-align:center;line-height:1.5">Logo<br>proyecto</span></div>';
-  var html='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>'+pname+'</title>'
+  // ── PDF HTML: schedule label and table headers use I18N ───────────────
+  var schedLabel=t().schedule;
+  var html='<!DOCTYPE html><html lang="'+lang+'"><head><meta charset="utf-8"><title>'+pname+'</title>'
     +'<style>*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}@page{size:'+(isL?'letter landscape':'letter portrait')+';margin:'+PAD+'px}html,body{width:'+PW+'px;background:#fff}body{padding:'+PAD+'px;-webkit-print-color-adjust:exact;print-color-adjust:exact}</style>'
     +'</head><body>';
   html+='<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;margin-bottom:16px;border-bottom:3px solid #1D9E75">'+leHTML
     +'<div style="text-align:center;flex:1;padding:0 20px">'
     +'<div style="font-size:'+(isL?22:18)+'px;font-weight:800;color:#1A1A1A">'+pname+'</div>'
     +(subtitle?'<div style="font-size:10px;color:#999;margin-top:4px">'+subtitle+'</div>':'')
-    +'<div style="font-size:8px;color:#CCC;margin-top:5px;text-transform:uppercase;letter-spacing:0.04em">Cronograma de producción · '+today+'</div>'
+    +'<div style="font-size:8px;color:#CCC;margin-top:5px;text-transform:uppercase;letter-spacing:0.04em">'+schedLabel+' · '+today+'</div>'
     +'</div>'+lpHTML+'</div>';
   html+='<div style="display:flex;flex-wrap:wrap;gap:12px;padding:8px 12px;background:#F7F6F2;border-radius:8px;border:1px solid #ECEAE4;margin-bottom:4px">'+legItems+restLeg+'</div>';
   html+=calRows;
   html+='<div style="height:1px;background:#E8E6E0;margin:16px 0 12px"></div>';
   html+='<table style="width:100%;border-collapse:collapse;border:1px solid #EEE">'
     +'<thead><tr style="background:#1D9E75">'
-    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Etapa</th>'
-    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Tipo</th>'
-    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Inicio</th>'
-    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Fin</th>'
-    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Duración</th>'
-    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Notas</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">'+t().stage+'</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">'+t().type+'</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">'+t().start+'</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">'+t().end+'</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">'+t().duration+'</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">'+t().notes+'</th>'
     +'</tr></thead><tbody>'+tRows+'</tbody></table>';
-  html+='<div style="margin-top:20px;padding-top:10px;border-top:1px solid #EEE"><span style="font-size:7.5px;color:#CCC;text-transform:uppercase;letter-spacing:0.04em">'+pname+' · Cronograma de producción</span></div>';
+  html+='<div style="margin-top:20px;padding-top:10px;border-top:1px solid #EEE"><span style="font-size:7.5px;color:#CCC;text-transform:uppercase;letter-spacing:0.04em">'+pname+' · '+schedLabel+'</span></div>';
   html+='<script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script></body></html>';
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob),a=document.createElement('a');
