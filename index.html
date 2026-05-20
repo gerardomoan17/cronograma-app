@@ -1294,19 +1294,46 @@ function exportSummaryPDF(){
     +'</div>';
   }).join('');
 
+  // ── Hiatus groups from restDays ──────────────────────────────────────────
+  var hiatusGroups=[];
+  if(restDays.size){
+    var sorted=[...restDays.keys()].sort();
+    var i=0;
+    while(i<sorted.length){
+      var j=i,lbl=restDays.get(sorted[i]);
+      while(j+1<sorted.length){
+        var diff=(new Date(sorted[j+1]+'T00:00:00')-new Date(sorted[j]+'T00:00:00'))/864e5;
+        if(diff===1&&restDays.get(sorted[j+1])===lbl)j++;else break;
+      }
+      hiatusGroups.push({from:sorted[i],to:sorted[j],lbl:lbl});
+      i=j+1;
+    }
+  }
+
   // ── Stat cards ───────────────────────────────────────────────────────────
-  var statItems=[
-    {label:schedLabel,value:fmtDate(totalStart)+' – '+fmtDate(totalEnd),small:true},
-    {label:lang==='en'?'Total weeks':'Semanas totales',value:totalWeeks+(lang==='en'?' wks':' sem')},
-    {label:lang==='en'?'Shoot':'Rodaje',value:shootWeeks>0?(shootWeeks+(lang==='en'?' wks':' sem')):'—'},
-    {label:'Prep',value:prepWeeks>0?(prepWeeks+(lang==='en'?' wks':' sem')):'—'}
-  ];
-  var statsHtml=statItems.map(function(st){
-    return '<div style="flex:1;min-width:100px;background:#F7F6F2;border-radius:8px;padding:10px 14px;border:0.5px solid #ECEAE4">'
-      +'<div style="font-size:8px;color:#AAA;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px">'+st.label+'</div>'
-      +'<div style="font-size:'+(st.small?'11':'16')+'px;font-weight:800;color:#1A1A1A;line-height:1.3">'+st.value+'</div>'
+  var hiatusLabel=lang==='en'?'Hiatus':'Hiatus';
+  var statsHtml='';
+
+  // Card 1: Production Schedule dates
+  statsHtml+='<div style="flex:1;min-width:120px;background:#F7F6F2;border-radius:8px;padding:10px 14px;border:0.5px solid #ECEAE4">'
+    +'<div style="font-size:8px;color:#AAA;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px">'+schedLabel+'</div>'
+    +'<div style="font-size:11px;font-weight:800;color:#1A1A1A;line-height:1.4">'+fmtDate(totalStart)+' – '+fmtDate(totalEnd)+'</div>'
+  +'</div>';
+
+  // Card 2: Total weeks
+  statsHtml+='<div style="flex:0 0 auto;min-width:100px;background:#F7F6F2;border-radius:8px;padding:10px 14px;border:0.5px solid #ECEAE4">'
+    +'<div style="font-size:8px;color:#AAA;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px">'+(lang==='en'?'Total weeks':'Semanas totales')+'</div>'
+    +'<div style="font-size:16px;font-weight:800;color:#1A1A1A">'+totalWeeks+(lang==='en'?' wks':' sem')+'</div>'
+  +'</div>';
+
+  // Card(s): one per hiatus group
+  hiatusGroups.forEach(function(g){
+    var range=g.from===g.to?fmtDate(g.from):(fmtDate(g.from)+' – '+fmtDate(g.to));
+    statsHtml+='<div style="flex:1;min-width:110px;background:#F7F6F2;border-radius:8px;padding:10px 14px;border:0.5px solid #ECEAE4">'
+      +'<div style="font-size:8px;color:#AAA;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px">'+hiatusLabel+(g.lbl?' — '+g.lbl:'')+'</div>'
+      +'<div style="font-size:11px;font-weight:800;color:#1A1A1A;line-height:1.4">'+range+'</div>'
     +'</div>';
-  }).join('');
+  });
 
   // ── Assemble HTML ────────────────────────────────────────────────────────
   var html='<!DOCTYPE html><html lang="'+lang+'"><head><meta charset="utf-8"><title>'+pname+' — '+schedLabel+'</title>'
