@@ -18,7 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .btn-google:hover{background:#f5f4f0}
 .btn-google svg{width:20px;height:20px;flex-shrink:0}
 .app{max-width:960px;margin:0 auto;padding:1.5rem 1rem}
-.topbar{display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid #e8e6e0;flex-wrap:wrap}
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid #e8e6e0}
 .topbar-left{display:flex;align-items:center;gap:8px;cursor:pointer;color:#888;font-size:13px}
 .topbar-left:hover{color:#222}
 .header{display:flex;align-items:flex-start;gap:12px;margin-bottom:1.25rem;flex-wrap:wrap}
@@ -148,11 +148,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .vtab.active input{color:#fff;cursor:text}
 .vtab .vx{background:none;border:none;cursor:pointer;font-size:14px;color:#bbb;padding:0 2px;line-height:1}
 .vtab.active .vx{color:rgba(255,255,255,0.7)}
-/* ── LANG TOGGLE ─────────────────────────────────────────────────────────── */
-.lang-toggle{display:flex;border:1px solid #e0ddd8;border-radius:8px;overflow:hidden;flex-shrink:0}
-.lang-btn{padding:5px 12px;font-size:11px;font-weight:700;border:none;background:#faf9f7;color:#999;cursor:pointer;letter-spacing:0.04em;transition:background 0.15s,color 0.15s}
-.lang-btn.active{background:#1D9E75;color:#fff}
-.lang-btn:not(.active):hover{background:#f0ede8;color:#555}
+/* Move bar compact */
+.move-bar{display:flex;align-items:center;gap:6px;margin-bottom:1rem;padding:7px 10px;background:#fff;border:1px solid #e8e6e0;border-radius:10px;flex-wrap:wrap}
+.move-bar-sep{width:1px;height:18px;background:#e8e6e0;margin:0 2px;flex-shrink:0}
+.move-bar-lbl{font-size:11px;color:#aaa;white-space:nowrap;font-weight:500}
+.move-bar-btn{padding:3px 9px;background:#f5f4f0;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;cursor:pointer;line-height:1.4;transition:background 0.12s}
+.move-bar-btn:hover{background:#e8e6e0}
+.move-bar-action{padding:4px 10px;background:#1D9E75;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background 0.12s}
+.move-bar-action:hover{background:#0F6E56}
 </style>
 </head>
 <body>
@@ -200,11 +203,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="btn-back-projects" class="topbar-left">← <span style="margin-left:4px">Mis proyectos</span></div>
     <span id="save-indicator"></span>
     <button id="btn-save" style="font-size:12px;background:#1D9E75;color:#fff;border:none;border-radius:8px;cursor:pointer;padding:5px 12px;margin-left:8px">Guardar</button>
-    <!-- ── LANGUAGE TOGGLE ─────────────────────────────────────────── -->
-    <div class="lang-toggle" style="margin-left:4px">
-      <button id="lang-es" class="lang-btn active" onclick="setLang('es')">ES</button>
-      <button id="lang-en" class="lang-btn" onclick="setLang('en')">EN</button>
-    </div>
     <button id="btn-logout-app" style="font-size:12px;color:#aaa;background:none;border:none;cursor:pointer;padding:4px 8px;margin-left:4px">Salir</button>
   </div>
 
@@ -242,11 +240,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 
   <div id="tab-cronograma">
-    <div class="card" id="calSection"><div style="color:#aaa;font-size:13px;text-align:center;padding:3rem">Agrega etapas en Configuración para ver el cronograma.</div></div>
-    <div class="export-row">
-      <button class="btn" onclick="showPDFOrientModal()">Exportar PDF</button>
-      <button class="btn" onclick="exportSummaryPDF()">Exportar resumen</button>
+    <!-- Move bar compacto -->
+    <div class="move-bar">
+      <span class="move-bar-lbl">Mover proyecto:</span>
+      <button class="move-bar-btn" onclick="moveProject2(-1)" title="Retroceder semanas">←</button>
+      <input type="number" id="moveWeeks2" value="1" min="1" max="52" title="Número de semanas"
+        style="width:36px;font-size:12px;padding:3px 5px;border:1px solid #e0ddd8;border-radius:6px;background:#faf9f7;color:#222;text-align:center">
+      <span class="move-bar-lbl">sem</span>
+      <button class="move-bar-btn" onclick="moveProject2(1)" title="Avanzar semanas">→</button>
+      <div class="move-bar-sep"></div>
+      <span class="move-bar-lbl">Anclar inicio:</span>
+      <div class="date-input-wrap" id="wrap-moveAnchor2" style="flex:1;min-width:110px;max-width:170px"></div>
+      <button class="move-bar-action" onclick="anchorProject2()">Mover</button>
     </div>
+
+    <div class="card" id="calSection"><div style="color:#aaa;font-size:13px;text-align:center;padding:3rem">Agrega etapas en Configuración para ver el cronograma.</div></div>
+    <div class="export-row"><button class="btn" onclick="showPDFOrientModal()">Exportar PDF</button></div>
   </div>
 
   <div id="tab-config" style="display:none">
@@ -356,6 +365,12 @@ var logoEmpresaB64='', logoProyectoB64='';
 var currentUser=null, currentProjectId=null, saveTimeout=null;
 var versions=[], currentVersionId=null;
 var PALETTE=['#1D9E75','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16'];
+var MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+var MES3=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+var DOW_LABELS=['L','M','X','J','V','S','D'];
+var DOW_FULL=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+var TIPO_LABELS={'prep':'Prep','shoot':'Rodaje','wrap':'Wrap','post':'Post','other':''};
+var TIPO_COLORS={'prep':'#6B7280','shoot':'#1D9E75','wrap':'#8B5CF6','post':'#EC4899','other':'#9CA3AF'};
 
 // ── I18N ───────────────────────────────────────────────────────────────────
 var lang='es';
@@ -368,10 +383,8 @@ var I18N={
     rest:'Descanso',
     schedule:'Cronograma de producción',
     stage:'Etapa',type:'Tipo',start:'Inicio',end:'Fin',duration:'Duración',notes:'Notas',
-    tipoLabels:{prep:'Prep',shoot:'Rodaje',wrap:'Wrap',post:'Post',other:''},
-    weeksStr:function(n){return n+' semana'+(n===1?'':'s');},
-    daysStr:function(n){return n+' día'+(n===1?'':'s');},
-    locale:'es-MX'
+    weeks:function(n){return n>=2?(n+' semanas'):(n+' días');},
+    generatedOn:'Cronograma de producción'
   },
   en:{
     months:['January','February','March','April','May','June','July','August','September','October','November','December'],
@@ -381,41 +394,22 @@ var I18N={
     rest:'Off',
     schedule:'Production Schedule',
     stage:'Stage',type:'Type',start:'Start',end:'End',duration:'Duration',notes:'Notes',
-    tipoLabels:{prep:'Prep',shoot:'Shoot',wrap:'Wrap',post:'Post',other:''},
-    weeksStr:function(n){return n+' week'+(n===1?'':'s');},
-    daysStr:function(n){return n+' day'+(n===1?'':'s');},
-    locale:'en-US'
+    weeks:function(n){return n>=2?(n+' weeks'):(n+' days');},
+    generatedOn:'Production Schedule'
   }
 };
 function t(){return I18N[lang];}
-
-var MES=t().months, MES3=t().months3, DOW_LABELS=t().dowLabels, DOW_FULL=t().dowFull;
-var TIPO_LABELS=t().tipoLabels;
-var TIPO_COLORS={'prep':'#6B7280','shoot':'#1D9E75','wrap':'#8B5CF6','post':'#EC4899','other':'#9CA3AF'};
-
 function setLang(l){
-  if(!I18N[l])return;
   lang=l;
-  // update toggle buttons
   document.getElementById('lang-es').classList.toggle('active',l==='es');
   document.getElementById('lang-en').classList.toggle('active',l==='en');
-  // update live variables
   MES=t().months; MES3=t().months3; DOW_LABELS=t().dowLabels; DOW_FULL=t().dowFull;
-  TIPO_LABELS=t().tipoLabels;
-  // persist in localStorage
-  try{localStorage.setItem('cronograma_lang',l);}catch(e){}
-  // re-render everything that has text
-  renderDowGrid();
-  renderList();
-  renderCalendar();
-  renderVersionTabs();
+  renderDowGrid();renderCalendar();renderVersionTabs();
+  scheduleSave();
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
 window.addEventListener('load', function(){
-  // restore saved language
-  try{var sl=localStorage.getItem('cronograma_lang');if(sl&&I18N[sl]){lang=sl;MES=t().months;MES3=t().months3;DOW_LABELS=t().dowLabels;DOW_FULL=t().dowFull;TIPO_LABELS=t().tipoLabels;document.getElementById('lang-es').classList.toggle('active',sl==='es');document.getElementById('lang-en').classList.toggle('active',sl==='en');}}catch(e){}
-
   document.getElementById('btn-google-login').addEventListener('click', function(){
     auth.signInWithPopup(gProvider).catch(function(e){alert('Error: '+e.message);});
   });
@@ -720,18 +714,14 @@ function isRestDayStr(dtS){if(restDays.has(dtS))return true;var p=dtS.split('-')
 function isRestDay(y,m,d){return isRestDayStr(dtStr(y,m,d));}
 function countRestInRange(s,e){var c=0,cur=new Date(s+'T00:00:00'),en=new Date(e+'T00:00:00');while(cur<=en){if(isRestDayStr(cur.toISOString().split('T')[0]))c++;cur.setDate(cur.getDate()+1);}return c;}
 function extendEnd(start,weeks){var d=new Date(start+'T00:00:00');d.setDate(d.getDate()+weeks*7-1);while(getDow(d.getFullYear(),d.getMonth()+1,d.getDate())===6)d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];}
-// ── calcDuration: uses I18N ────────────────────────────────────────────────
-function calcDuration(s,e){
-  var td=Math.round((new Date(e)-new Date(s))/864e5)+1,tw=Math.round(td/7);
-  return tw>=2?t().weeksStr(tw):t().daysStr(td);
-}
+function calcDuration(s,e){var td=Math.round((new Date(e)-new Date(s))/864e5)+1,tw=Math.round(td/7);return tw>=2?(tw+' semanas'):(td+' días');}
 function stageHasConflict(s,e){return countRestInRange(s,e)>0;}
 function getStagesForDay(y,m,d){var dt=dtStr(y,m,d);return stages.filter(function(st){if(st.restMode==='subtract'&&isRestDayStr(dt))return false;return dt>=st.start&&dt<=st.end;});}
 function showAddMsg(msg){var el=document.getElementById('addMsg');if(el){el.textContent=msg;if(msg)setTimeout(function(){el.textContent='';},3000);}}
 function calcLaborDaysNoHolidays(s,e){var c=0,cur=new Date(s+'T00:00:00'),en=new Date(e+'T00:00:00');while(cur<=en){if(getDow(cur.getFullYear(),cur.getMonth()+1,cur.getDate())!==6)c++;cur.setDate(cur.getDate()+1);}return c;}
 function findEndByLaborDays(start,td){var count=0,cur=new Date(start+'T00:00:00');while(true){var ds=cur.toISOString().split('T')[0];if(getDow(cur.getFullYear(),cur.getMonth()+1,cur.getDate())!==6&&!restDays.has(ds))count++;if(count>=td)break;cur.setDate(cur.getDate()+1);}return cur.toISOString().split('T')[0];}
 
-// ── MOVE PROJECT ───────────────────────────────────────────────────────────
+// ── MOVE PROJECT (Configuración — lee moveWeeks) ───────────────────────────
 function moveProject(dir){
   if(!stages.length){alert('No hay etapas para mover.');return;}
   var weeks=(parseInt(document.getElementById('moveWeeks').value)||1)*dir;
@@ -757,6 +747,35 @@ function anchorProject(){
     s.start=sd.toISOString().split('T')[0];s.end=ed.toISOString().split('T')[0];
   });
   clearPickerVal('wrap-moveAnchor');renderPickerBtn('wrap-moveAnchor','Seleccionar fecha');
+  renderList();renderCalendar();initAllPickers();scheduleSave();
+}
+
+// ── MOVE PROJECT 2 (Cronograma — lee moveWeeks2) ──────────────────────────
+function moveProject2(dir){
+  if(!stages.length){alert('No hay etapas para mover.');return;}
+  var weeks=(parseInt(document.getElementById('moveWeeks2').value)||1)*dir;
+  var days=weeks*7;
+  stages.forEach(function(s){
+    var sd=new Date(s.start+'T00:00:00'),ed=new Date(s.end+'T00:00:00');
+    sd.setDate(sd.getDate()+days);ed.setDate(ed.getDate()+days);
+    s.start=sd.toISOString().split('T')[0];s.end=ed.toISOString().split('T')[0];
+  });
+  renderList();renderCalendar();initAllPickers();scheduleSave();
+}
+
+function anchorProject2(){
+  if(!stages.length){alert('No hay etapas para mover.');return;}
+  var newStart=getPickerVal('wrap-moveAnchor2');
+  if(!newStart){alert('Selecciona una fecha de inicio.');return;}
+  var minStart=stages.reduce(function(m,s){return s.start<m?s.start:m;},stages[0].start);
+  var diff=Math.round((new Date(newStart+'T00:00:00')-new Date(minStart+'T00:00:00'))/864e5);
+  if(diff===0){return;}
+  stages.forEach(function(s){
+    var sd=new Date(s.start+'T00:00:00'),ed=new Date(s.end+'T00:00:00');
+    sd.setDate(sd.getDate()+diff);ed.setDate(ed.getDate()+diff);
+    s.start=sd.toISOString().split('T')[0];s.end=ed.toISOString().split('T')[0];
+  });
+  clearPickerVal('wrap-moveAnchor2');renderPickerBtn('wrap-moveAnchor2','Seleccionar fecha');
   renderList();renderCalendar();initAllPickers();scheduleSave();
 }
 
@@ -844,6 +863,7 @@ function initAllPickers(){
   });
   initPicker('wrap-restTo','Hasta',null,function(){});
   initPicker('wrap-moveAnchor','Seleccionar fecha',null,function(){});
+  initPicker('wrap-moveAnchor2','Seleccionar fecha',null,function(){});
   if(stages.length>0){
     var nm=nextMonday(stages[stages.length-1].end);
     setPickerVal('wrap-stageStart',nm);renderPickerBtn('wrap-stageStart','Fecha de inicio');
@@ -994,8 +1014,7 @@ function renderCalendar(){
   var html='<div style="margin-bottom:14px"><span style="font-size:16px;font-weight:600;color:#222">'+pname+'</span>'+(sub?'<span style="font-size:12px;color:#888;margin-left:10px">'+sub+'</span>':'')+'</div>';
   html+='<div class="legend">';
   stages.forEach(function(s){html+='<div class="legend-item"><div class="legend-dot" style="background:'+s.color+'"></div><span style="font-weight:600;color:#222">'+s.name+'</span><span style="color:#aaa;margin-left:4px">'+calcDuration(s.start,s.end)+'</span></div>';});
-  // ── "Descanso" / "Off" via I18N ────────────────────────────────────────
-  html+='<div class="legend-item"><div class="legend-dot" style="background:#B4B2A9"></div><span>'+t().rest+'</span></div></div>';
+  html+='<div class="legend-item"><div class="legend-dot" style="background:#B4B2A9"></div><span>Descanso</span></div></div>';
   for(var y=minY;y<=maxY;y++){
     var allM=[];
     stages.forEach(function(s){
@@ -1036,28 +1055,15 @@ function renderCalendar(){
     }
     html+='</div>';
   }
-  // ── Summary: Option A card style with color sidebar + notes ──────────────
-  html+='<div style="margin-top:1.5rem;border-top:1px solid #e8e6e0;padding-top:1rem"><div style="display:flex;flex-direction:column;gap:5px">';
+  html+='<div style="margin-top:1.5rem;border-top:1px solid #e8e6e0;padding-top:1rem"><table class="summary-table"><thead><tr><th>Etapa</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Duración</th><th>Notas</th></tr></thead><tbody>';
   stages.forEach(function(s){
-    var tl=TIPO_LABELS[s.tipo||'other'];
-    var hasNotes=s.notes&&s.notes.trim();
-    html+='<div style="display:flex;align-items:stretch;border:1px solid #e8e6e0;border-radius:10px;overflow:hidden;background:#fff">'
-      +'<div style="width:4px;background:'+s.color+';flex-shrink:0"></div>'
-      +'<div style="padding:10px 14px;flex:1;min-width:0">'
-        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:'+(hasNotes?'7':'0')+'px">'
-          +'<span style="font-size:13px;font-weight:600;color:#222">'+s.name+'</span>'
-          +(tl?'<span style="font-size:10px;color:#888;background:#f5f4f0;padding:1px 8px;border-radius:20px;border:1px solid #e8e6e0">'+tl+'</span>':'')
-          +'<div style="display:flex;gap:16px;font-size:12px;color:#888;margin-left:auto;flex-wrap:wrap;align-items:center">'
-            +'<span><span style="color:#bbb;font-size:10px;margin-right:3px">'+t().start.toUpperCase()+'</span>'+fmtDate(s.start)+'</span>'
-            +'<span><span style="color:#bbb;font-size:10px;margin-right:3px">'+t().end.toUpperCase()+'</span>'+fmtDate(s.end)+'</span>'
-            +'<span style="font-weight:600;color:#222;background:#f5f4f0;padding:2px 10px;border-radius:20px;font-size:12px">'+calcDuration(s.start,s.end)+'</span>'
-          +'</div>'
-        +'</div>'
-        +(hasNotes?'<div style="font-size:11px;color:#888;border-top:1px solid #f5f4f0;padding-top:6px;line-height:1.5">'+s.notes+'</div>':'')
-      +'</div>'
-    +'</div>';
+    html+='<tr><td><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:'+s.color+';display:inline-block"></span>'+s.name+'</span></td>'
+      +'<td style="color:#888">'+(TIPO_LABELS[s.tipo||'other']||'—')+'</td>'
+      +'<td>'+fmtDate(s.start)+'</td><td>'+fmtDate(s.end)+'</td>'
+      +'<td>'+calcDuration(s.start,s.end)+'</td>'
+      +'<td style="color:#888">'+(s.notes||'—')+'</td></tr>';
   });
-  html+='</div></div>';
+  html+='</tbody></table></div>';
   calEl.innerHTML=html;
 }
 
@@ -1104,7 +1110,7 @@ function saveEditModal(i){
   var n=(document.getElementById('me-name').value||'').trim();
   var tipo=document.getElementById('me-tipo').value||'other';
   var c=document.getElementById('me-color').value||'#1D9E75';
-  var t2=(document.getElementById('me-notes').value||'').trim();
+  var t=(document.getElementById('me-notes').value||'').trim();
   var isW=document.getElementById('me-mode-weeks').style.display!=='none',s='',e='';
   if(isW){
     s=getPickerVal('me-wrap-startW');
@@ -1116,7 +1122,7 @@ function saveEditModal(i){
   }
   if(!n||!s||!e){alert('Completa los campos.');return;}
   if(s>e){alert('El inicio debe ser antes del fin.');return;}
-  stages[i]=Object.assign({},stages[i],{name:n,tipo:tipo,start:s,end:e,color:c,notes:t2,restMode:null});
+  stages[i]=Object.assign({},stages[i],{name:n,tipo:tipo,start:s,end:e,color:c,notes:t,restMode:null});
   closeModalDirect();renderList();renderCalendar();scheduleSave();
   if(stageHasConflict(s,e))showRestConflictModal([stages[i]]);
 }
@@ -1138,8 +1144,7 @@ function exportPDF(orientation){
   var PW=isL?1056:816, PAD=48, cols=isL?4:3;
   var pname=document.getElementById('projectName').value||'Proyecto';
   var subtitle=document.getElementById('projectSubtitle').value||'';
-  // ── date formatted in the current language locale ──────────────────────
-  var today=new Date().toLocaleDateString(t().locale,{year:'numeric',month:'long',day:'numeric'});
+  var today=new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
   var weekMap=buildWeekMap();
   var allD=stages.reduce(function(a,s){return a.concat([s.start,s.end]);},[]);
   var minY=Math.min.apply(null,allD.map(function(d){return parseInt(d.split('-')[0]);}));
@@ -1161,8 +1166,7 @@ function exportPDF(orientation){
     sv+='<rect width="'+W+'" height="'+HDR+'" fill="#1A1A1A"/>';
     sv+='<text x="'+W/2+'" y="'+(HDR-5)+'" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" font-family="Arial,Helvetica,sans-serif" letter-spacing="1">'+MES[mNum-1].toUpperCase()+'</text>';
     sv+='<rect x="0" y="'+HDR+'" width="'+WN+'" height="'+DOW_H+'" fill="#F5F4F0"/>';
-    // ── use DOW_LABELS (respects current lang) ────────────────────────────
-    DOW_LABELS.forEach(function(d,i){sv+='<text x="'+(WN+i*CW+CW/2)+'" y="'+(HDR+DOW_H-4)+'" text-anchor="middle" font-size="7.5" fill="#AAA" font-family="Arial,Helvetica,sans-serif" font-weight="600">'+d+'</text>';});
+    ['L','M','X','J','V','S','D'].forEach(function(d,i){sv+='<text x="'+(WN+i*CW+CW/2)+'" y="'+(HDR+DOW_H-4)+'" text-anchor="middle" font-size="7.5" fill="#AAA" font-family="Arial,Helvetica,sans-serif" font-weight="600">'+d+'</text>';});
     for(var row=0;row<rows;row++){
       var yOff=HDR+DOW_H+row*CH,fd=row*7-fdow+1,monDate=null;
       for(var dd=fd;dd<fd+7;dd++){if(dd>=1&&dd<=dim){monDate=getMondayStr(year,mNum,dd);break;}}
@@ -1196,46 +1200,40 @@ function exportPDF(orientation){
     }
   });
   var legItems=stages.map(function(s){return '<div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:3px;background:'+s.color+';flex-shrink:0"></div><span style="font-size:9px;color:#333;font-weight:700">'+s.name+'</span><span style="font-size:8px;color:#AAA;margin-left:2px">'+calcDuration(s.start,s.end)+'</span></div>';}).join('');
-  // ── "Off"/"Descanso" in PDF legend via I18N ───────────────────────────
-  var restLeg=(restDow.size||restDays.size)?'<div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:3px;background:#D3D1C7;flex-shrink:0"></div><span style="font-size:9px;color:#333">'+t().rest+'</span></div>':'';
-  // ── PDF rows: Option A card style with color sidebar + notes ─────────────
-  var tRows=stages.map(function(s){
-    var tl=TIPO_LABELS[s.tipo||'other']||'';
-    var hasNotes=s.notes&&s.notes.trim();
-    return '<div style="display:flex;align-items:stretch;border:1px solid #E8E6E0;border-radius:8px;overflow:hidden;background:#fff;margin-bottom:5px">'
-      +'<div style="width:4px;background:'+s.color+';flex-shrink:0"></div>'
-      +'<div style="padding:9px 14px;flex:1">'
-        +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:'+(hasNotes?'6':'0')+'px">'
-          +'<span style="font-size:10px;font-weight:700;color:#1A1A1A">'+s.name+'</span>'
-          +(tl?'<span style="font-size:8px;color:#888;background:#F5F4F0;padding:1px 7px;border-radius:20px;border:0.5px solid #E0DDD8">'+tl+'</span>':'')
-          +'<div style="display:flex;gap:14px;font-size:9px;color:#888;margin-left:auto;flex-wrap:wrap;align-items:center">'
-            +'<span><span style="color:#BBB;font-size:8px;margin-right:2px">'+t().start.toUpperCase()+'</span>'+fmtDate(s.start)+'</span>'
-            +'<span><span style="color:#BBB;font-size:8px;margin-right:2px">'+t().end.toUpperCase()+'</span>'+fmtDate(s.end)+'</span>'
-            +'<span style="font-weight:700;color:#1A1A1A;background:#F5F4F0;padding:1px 8px;border-radius:20px;font-size:9px">'+calcDuration(s.start,s.end)+'</span>'
-          +'</div>'
-        +'</div>'
-        +(hasNotes?'<div style="font-size:8px;color:#888;border-top:1px solid #F5F4F0;padding-top:5px;line-height:1.5">'+s.notes+'</div>':'')
-      +'</div>'
-    +'</div>';
+  var restLeg=(restDow.size||restDays.size)?'<div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:3px;background:#D3D1C7;flex-shrink:0"></div><span style="font-size:9px;color:#333">Descanso</span></div>':'';
+  var tRows=stages.map(function(s,idx){
+    return '<tr style="background:'+(idx%2===0?'#fff':'#F9F8F5')+'">'
+      +'<td style="padding:5px 10px;border-bottom:1px solid #EEE"><div style="display:flex;align-items:center;gap:5px"><div style="width:7px;height:7px;border-radius:50%;background:'+s.color+';flex-shrink:0"></div><strong style="font-size:9px;color:#222">'+s.name+'</strong></div></td>'
+      +'<td style="padding:5px 10px;font-size:9px;color:#888;border-bottom:1px solid #EEE">'+(TIPO_LABELS[s.tipo||'other']||'—')+'</td>'
+      +'<td style="padding:5px 10px;font-size:9px;color:#555;border-bottom:1px solid #EEE">'+fmtDate(s.start)+'</td>'
+      +'<td style="padding:5px 10px;font-size:9px;color:#555;border-bottom:1px solid #EEE">'+fmtDate(s.end)+'</td>'
+      +'<td style="padding:5px 10px;font-size:9px;color:#555;border-bottom:1px solid #EEE">'+calcDuration(s.start,s.end)+'</td>'
+      +'<td style="padding:5px 10px;font-size:9px;color:#AAA;border-bottom:1px solid #EEE">'+(s.notes||'—')+'</td></tr>';
   }).join('');
   var leHTML=logoEmpresaB64?'<img src="'+logoEmpresaB64+'" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">':'<div style="width:52px;height:52px;border:1.5px dashed #D3D1C7;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FAFAF8"><span style="font-size:8px;color:#CCC;text-align:center;line-height:1.5">Logo<br>empresa</span></div>';
   var lpHTML=logoProyectoB64?'<img src="'+logoProyectoB64+'" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">':'<div style="width:52px;height:52px;border:1.5px dashed #D3D1C7;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FAFAF8"><span style="font-size:8px;color:#CCC;text-align:center;line-height:1.5">Logo<br>proyecto</span></div>';
-  // ── PDF HTML: schedule label and table headers use I18N ───────────────
-  var schedLabel=t().schedule;
-  var html='<!DOCTYPE html><html lang="'+lang+'"><head><meta charset="utf-8"><title>'+pname+'</title>'
+  var html='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>'+pname+'</title>'
     +'<style>*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}@page{size:'+(isL?'letter landscape':'letter portrait')+';margin:'+PAD+'px}html,body{width:'+PW+'px;background:#fff}body{padding:'+PAD+'px;-webkit-print-color-adjust:exact;print-color-adjust:exact}</style>'
     +'</head><body>';
   html+='<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;margin-bottom:16px;border-bottom:3px solid #1D9E75">'+leHTML
     +'<div style="text-align:center;flex:1;padding:0 20px">'
     +'<div style="font-size:'+(isL?22:18)+'px;font-weight:800;color:#1A1A1A">'+pname+'</div>'
     +(subtitle?'<div style="font-size:10px;color:#999;margin-top:4px">'+subtitle+'</div>':'')
-    +'<div style="font-size:8px;color:#CCC;margin-top:5px;text-transform:uppercase;letter-spacing:0.04em">'+schedLabel+' · '+today+'</div>'
+    +'<div style="font-size:8px;color:#CCC;margin-top:5px;text-transform:uppercase;letter-spacing:0.04em">Cronograma de producción · '+today+'</div>'
     +'</div>'+lpHTML+'</div>';
   html+='<div style="display:flex;flex-wrap:wrap;gap:12px;padding:8px 12px;background:#F7F6F2;border-radius:8px;border:1px solid #ECEAE4;margin-bottom:4px">'+legItems+restLeg+'</div>';
   html+=calRows;
   html+='<div style="height:1px;background:#E8E6E0;margin:16px 0 12px"></div>';
-  html+='<div style="display:flex;flex-direction:column;gap:0">'+tRows+'</div>';
-  html+='<div style="margin-top:20px;padding-top:10px;border-top:1px solid #EEE"><span style="font-size:7.5px;color:#CCC;text-transform:uppercase;letter-spacing:0.04em">'+pname+' · '+schedLabel+'</span></div>';
+  html+='<table style="width:100%;border-collapse:collapse;border:1px solid #EEE">'
+    +'<thead><tr style="background:#1D9E75">'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Etapa</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Tipo</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Inicio</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Fin</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Duración</th>'
+    +'<th style="padding:7px 10px;text-align:left;font-size:8px;color:#fff;font-weight:700;text-transform:uppercase">Notas</th>'
+    +'</tr></thead><tbody>'+tRows+'</tbody></table>';
+  html+='<div style="margin-top:20px;padding-top:10px;border-top:1px solid #EEE"><span style="font-size:7.5px;color:#CCC;text-transform:uppercase;letter-spacing:0.04em">'+pname+' · Cronograma de producción</span></div>';
   html+='<script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script></body></html>';
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -1243,141 +1241,6 @@ function exportPDF(orientation){
   document.body.appendChild(a);a.click();
   setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
   document.getElementById('modalContainer').innerHTML='<div class="modal-overlay" onclick="closeModal(event)"><div class="modal" onclick="event.stopPropagation()"><h4>✅ Archivo descargado</h4><p style="margin-bottom:10px">Para convertirlo a PDF:</p><div style="background:#f5f4f0;border-radius:10px;padding:12px;font-size:12px;display:flex;flex-direction:column;gap:8px;margin-bottom:1rem"><div><strong>1.</strong> Abre el archivo <code style="background:#e8e6e0;padding:1px 5px;border-radius:4px">.html</code> descargado</div><div><strong>2.</strong> Se abrirá el diálogo de impresión automáticamente</div><div><strong>3.</strong> Selecciona <strong>"Guardar como PDF"</strong></div></div><div class="modal-actions"><button class="btn btn-primary" onclick="closeModalDirect()">Entendido</button></div></div></div>';
-}
-
-// ── EXPORT SUMMARY PDF ─────────────────────────────────────────────────────
-function exportSummaryPDF(){
-  if(!stages.length){alert('Agrega etapas primero.');return;}
-  var pname=document.getElementById('projectName').value||'Proyecto';
-  var subtitle=document.getElementById('projectSubtitle').value||'';
-  var today=new Date().toLocaleDateString(t().locale,{year:'numeric',month:'long',day:'numeric'});
-  var schedLabel=t().schedule;
-
-  // ── Stats ────────────────────────────────────────────────────────────────
-  var allStarts=stages.map(function(s){return s.start;}).sort();
-  var allEnds=stages.map(function(s){return s.end;}).sort();
-  var totalStart=allStarts[0], totalEnd=allEnds[allEnds.length-1];
-  var totalDays=Math.round((new Date(totalEnd)-new Date(totalStart))/864e5)+1;
-  var totalWeeks=Math.round(totalDays/7);
-  var shootStages=stages.filter(function(s){return s.tipo==='shoot';});
-  var shootWeeks=0;
-  shootStages.forEach(function(s){shootWeeks+=Math.round((Math.round((new Date(s.end)-new Date(s.start))/864e5)+1)/7);});
-  var prepStages=stages.filter(function(s){return s.tipo==='prep';});
-  var prepWeeks=0;
-  prepStages.forEach(function(s){prepWeeks+=Math.round((Math.round((new Date(s.end)-new Date(s.start))/864e5)+1)/7);});
-
-  var leHTML=logoEmpresaB64
-    ?'<img src="'+logoEmpresaB64+'" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">'
-    :'';
-  var lpHTML=logoProyectoB64
-    ?'<img src="'+logoProyectoB64+'" style="width:52px;height:52px;object-fit:contain;border-radius:10px;display:block">'
-    :'';
-
-  // ── Stage cards ──────────────────────────────────────────────────────────
-  var cards=stages.map(function(s){
-    var tl=TIPO_LABELS[s.tipo||'other']||'';
-    var hasNotes=s.notes&&s.notes.trim();
-    return '<div style="display:flex;align-items:stretch;border:1.5px solid #E8E6E0;border-radius:10px;overflow:hidden;background:#fff;margin-bottom:8px;page-break-inside:avoid">'
-      +'<div style="width:5px;background:'+s.color+';flex-shrink:0"></div>'
-      +'<div style="padding:13px 18px;flex:1">'
-        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:'+(hasNotes?'9':'0')+'px;flex-wrap:wrap">'
-          +'<span style="font-size:13px;font-weight:800;color:#1A1A1A;letter-spacing:0.02em">'+s.name+'</span>'
-          +(tl?'<span style="font-size:9px;color:#888;background:#F5F4F0;padding:2px 9px;border-radius:20px;border:0.5px solid #E0DDD8;font-weight:600">'+tl+'</span>':'')
-          +'<div style="margin-left:auto;display:flex;align-items:center;gap:18px;flex-wrap:wrap">'
-            +'<span style="font-size:10px;color:#AAA;letter-spacing:0.04em">'+t().start.toUpperCase()+'<span style="color:#444;font-weight:600;margin-left:5px">'+fmtDate(s.start)+'</span></span>'
-            +'<span style="font-size:10px;color:#AAA;letter-spacing:0.04em">'+t().end.toUpperCase()+'<span style="color:#444;font-weight:600;margin-left:5px">'+fmtDate(s.end)+'</span></span>'
-            +'<span style="font-size:11px;font-weight:800;color:#fff;background:'+s.color+';padding:3px 12px;border-radius:20px">'+calcDuration(s.start,s.end)+'</span>'
-          +'</div>'
-        +'</div>'
-        +(hasNotes?'<div style="font-size:10px;color:#888;background:#FAFAF8;border-radius:6px;padding:6px 10px;border-left:3px solid '+s.color+'40;line-height:1.6">'+s.notes+'</div>':'')
-      +'</div>'
-    +'</div>';
-  }).join('');
-
-  // ── Hiatus groups from restDays ──────────────────────────────────────────
-  var hiatusGroups=[];
-  if(restDays.size){
-    var sorted=[...restDays.keys()].sort();
-    var i=0;
-    while(i<sorted.length){
-      var j=i,lbl=restDays.get(sorted[i]);
-      while(j+1<sorted.length){
-        var diff=(new Date(sorted[j+1]+'T00:00:00')-new Date(sorted[j]+'T00:00:00'))/864e5;
-        if(diff===1&&restDays.get(sorted[j+1])===lbl)j++;else break;
-      }
-      hiatusGroups.push({from:sorted[i],to:sorted[j],lbl:lbl});
-      i=j+1;
-    }
-  }
-
-  // ── Stat cards ───────────────────────────────────────────────────────────
-  var hiatusLabel=lang==='en'?'Hiatus':'Hiatus';
-  var statsHtml='';
-
-  // Card 1: Production Schedule dates
-  statsHtml+='<div style="flex:1;min-width:120px;background:#F7F6F2;border-radius:8px;padding:10px 14px;border:0.5px solid #ECEAE4">'
-    +'<div style="font-size:8px;color:#AAA;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px">'+schedLabel+'</div>'
-    +'<div style="font-size:11px;font-weight:800;color:#1A1A1A;line-height:1.4">'+fmtDate(totalStart)+' – '+fmtDate(totalEnd)+'</div>'
-  +'</div>';
-
-  // Card 2: Total weeks
-  statsHtml+='<div style="flex:0 0 auto;min-width:100px;background:#F7F6F2;border-radius:8px;padding:10px 14px;border:0.5px solid #ECEAE4">'
-    +'<div style="font-size:8px;color:#AAA;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px">'+(lang==='en'?'Total weeks':'Semanas totales')+'</div>'
-    +'<div style="font-size:16px;font-weight:800;color:#1A1A1A">'+totalWeeks+(lang==='en'?' wks':' sem')+'</div>'
-  +'</div>';
-
-  // Card(s): one per hiatus group
-  hiatusGroups.forEach(function(g){
-    var range=g.from===g.to?fmtDate(g.from):(fmtDate(g.from)+' – '+fmtDate(g.to));
-    statsHtml+='<div style="flex:1;min-width:110px;background:#F7F6F2;border-radius:8px;padding:10px 14px;border:0.5px solid #ECEAE4">'
-      +'<div style="font-size:8px;color:#AAA;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px">'+hiatusLabel+(g.lbl?' — '+g.lbl:'')+'</div>'
-      +'<div style="font-size:11px;font-weight:800;color:#1A1A1A;line-height:1.4">'+range+'</div>'
-    +'</div>';
-  });
-
-  // ── Assemble HTML ────────────────────────────────────────────────────────
-  var html='<!DOCTYPE html><html lang="'+lang+'"><head><meta charset="utf-8"><title>'+pname+' — '+schedLabel+'</title>'
-    +'<style>*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}'
-    +'@page{size:letter portrait;margin:40px}'
-    +'html,body{width:816px;background:#fff}'
-    +'body{padding:40px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
-    +'</style></head><body>';
-
-  // Header
-  html+='<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:18px;margin-bottom:20px;border-bottom:3px solid #1D9E75">'
-    +(leHTML?leHTML:'<div style="width:52px"></div>')
-    +'<div style="text-align:center;flex:1;padding:0 20px">'
-      +'<div style="font-size:24px;font-weight:800;color:#1A1A1A;letter-spacing:-0.5px">'+pname+'</div>'
-      +(subtitle?'<div style="font-size:11px;color:#999;margin-top:4px">'+subtitle+'</div>':'')
-      +'<div style="font-size:8px;color:#CCC;margin-top:6px;text-transform:uppercase;letter-spacing:0.06em">'+schedLabel+' · '+today+'</div>'
-    +'</div>'
-    +(lpHTML?lpHTML:'<div style="width:52px"></div>')
-  +'</div>';
-
-  // Stats row
-  html+='<div style="display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap">'+statsHtml+'</div>';
-
-  // Section label
-  html+='<div style="font-size:9px;font-weight:700;color:#AAA;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">'+schedLabel+'</div>';
-
-  // Cards
-  html+=cards;
-
-  // Footer
-  html+='<div style="margin-top:28px;padding-top:10px;border-top:0.5px solid #E8E6E0;display:flex;justify-content:space-between;align-items:center">'
-    +'<span style="font-size:7px;color:#CCC;text-transform:uppercase;letter-spacing:0.06em">'+pname+' · '+schedLabel+'</span>'
-    +'<span style="font-size:7px;color:#CCC">'+today+'</span>'
-  +'</div>';
-
-  html+='<script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script></body></html>';
-
-  var blob=new Blob([html],{type:'text/html;charset=utf-8'});
-  var url=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=url;a.download=(pname.replace(/\s+/g,'_'))+'_resumen.html';
-  document.body.appendChild(a);a.click();
-  setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
-
-  document.getElementById('modalContainer').innerHTML='<div class="modal-overlay" onclick="closeModal(event)"><div class="modal" onclick="event.stopPropagation()"><h4>✅ Resumen descargado</h4><p style="margin-bottom:10px">Para convertirlo a PDF:</p><div style="background:#f5f4f0;border-radius:10px;padding:12px;font-size:12px;display:flex;flex-direction:column;gap:8px;margin-bottom:1rem"><div><strong>1.</strong> Abre el archivo <code style="background:#e8e6e0;padding:1px 5px;border-radius:4px">.html</code> descargado</div><div><strong>2.</strong> Se abrirá el diálogo de impresión automáticamente</div><div><strong>3.</strong> Selecciona <strong>"Guardar como PDF"</strong></div></div><div class="modal-actions"><button class="btn btn-primary" onclick="closeModalDirect()">Entendido</button></div></div></div>';
 }
 </script>
 </body>
