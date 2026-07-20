@@ -71,9 +71,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .dp-day.disabled{color:#ddd;cursor:not-allowed}
 .dp-day.disabled:hover{background:none}
 .etapas-list{display:flex;flex-direction:column;gap:6px}
-.etapa-item{border:1px solid #eee;border-radius:10px;background:#faf9f7}
+.etapa-item{border:1px solid #eee;border-radius:10px;background:#faf9f7;transition:opacity 0.15s}
+.etapa-item.dragging{opacity:0.4;border-style:dashed}
+.etapa-item.drag-over{border-color:#1D9E75;background:#f0faf6}
 .etapa-header{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;border-radius:10px}
 .etapa-header:hover{background:#f0ede8}
+.drag-handle{cursor:grab;color:#ccc;font-size:15px;flex-shrink:0;padding:0 2px;line-height:1;user-select:none}
+.drag-handle:hover{color:#999}
+.drag-handle:active{cursor:grabbing}
 .etapa-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
 .etapa-name{font-weight:600;flex:1;color:#222;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .etapa-dates{color:#888;font-size:11px;white-space:nowrap;margin-right:4px}
@@ -959,7 +964,9 @@ function renderList(){
     else if(s.restMode==='subtract')tag='<span style="font-size:10px;background:#F1EFE8;color:#5F5E5A;padding:1px 6px;border-radius:10px;margin-left:4px">restar</span>';
     var tl=TIPO_LABELS[s.tipo||'other'],tc=TIPO_COLORS[s.tipo||'other'];
     var ttag=tl?'<span class="etapa-tipo" style="background:'+tc+'">'+tl+'</span>':'';
-    return '<div class="etapa-item"><div class="etapa-header" onclick="openEditModal('+i+')">'
+    return '<div class="etapa-item" draggable="true" data-idx="'+i+'">'
+      +'<div class="etapa-header" onclick="openEditModal('+i+')">'
+      +'<span class="drag-handle" onclick="event.stopPropagation()" title="Arrastrar para reordenar">⠿</span>'
       +'<div class="etapa-dot" style="background:'+s.color+'"></div>'
       +'<div class="etapa-name">'+s.name+tag+'</div>'+ttag
       +'<div class="etapa-dates">'+fmtDate(s.start)+' → '+fmtDate(s.end)+'</div>'
@@ -967,6 +974,42 @@ function renderList(){
       +'<button class="icon-btn del" onclick="event.stopPropagation();confirmDelete('+i+')">×</button>'
       +'</div></div>';
   }).join('');
+  initDragDrop();
+}
+
+// ── DRAG & DROP ────────────────────────────────────────────────────────────
+var dragSrcIdx=null;
+function initDragDrop(){
+  var items=document.querySelectorAll('#etapasList .etapa-item');
+  items.forEach(function(item){
+    item.addEventListener('dragstart',function(e){
+      dragSrcIdx=parseInt(this.dataset.idx);
+      this.classList.add('dragging');
+      e.dataTransfer.effectAllowed='move';
+    });
+    item.addEventListener('dragend',function(){
+      this.classList.remove('dragging');
+      document.querySelectorAll('#etapasList .etapa-item').forEach(function(el){el.classList.remove('drag-over');});
+    });
+    item.addEventListener('dragover',function(e){
+      e.preventDefault();
+      e.dataTransfer.dropEffect='move';
+      document.querySelectorAll('#etapasList .etapa-item').forEach(function(el){el.classList.remove('drag-over');});
+      this.classList.add('drag-over');
+    });
+    item.addEventListener('dragleave',function(){
+      this.classList.remove('drag-over');
+    });
+    item.addEventListener('drop',function(e){
+      e.preventDefault();
+      var targetIdx=parseInt(this.dataset.idx);
+      if(dragSrcIdx===null||dragSrcIdx===targetIdx)return;
+      var moved=stages.splice(dragSrcIdx,1)[0];
+      stages.splice(targetIdx,0,moved);
+      dragSrcIdx=null;
+      renderList();renderCalendar();scheduleSave();
+    });
+  });
 }
 
 function addStage(){
